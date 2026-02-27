@@ -1,0 +1,112 @@
+:root {
+  color-scheme: dark;
+  --bg: #0c1016;
+  --panel: #161d28;
+  --panel-border: #263246;
+  --text: #d9e2f2;
+  --muted: #95a6c2;
+  --accent: #6dc9ff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: radial-gradient(120% 120% at 10% 10%, #202a3d 0%, var(--bg) 52%);
+  color: var(--text);
+  font-family: "Segoe UI", "Inter", sans-serif;
+}
+
+.topbar {
+  height: 48px;
+  border-bottom: 1px solid var(--panel-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  background: rgba(17, 24, 36, 0.75);
+}
+
+.title {
+  font-weight: 600;
+  letter-spacing: 0.4px;
+}
+
+.stats {
+  display: flex;
+  gap: 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+#layout {
+  width: 100%;
+  height: calc(100% - 48px - 180px);
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+}
+
+#layout.split {
+  grid-template-columns: 1fr 1fr;
+}
+
+#layout.view2d {
+  grid-template-columns: 1fr;
+}
+
+#layout.view3d {
+  grid-template-columns: 1fr;
+}
+
+#layout.view2d .panel-3d,
+#layout.view3d .panel-2d {
+  display: none;
+}
+
+.panel {
+  position: relative;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--panel);
+}
+
+.panel canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.graphs {
+  height: 180px;
+  margin: 0 8px 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #111827;
+}
+
+.graphs.hidden {
+  display: none;
+}
+
+.graphs canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+@media (max-width: 980px) {
+  #layout.split {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 1fr;
+  }
+}

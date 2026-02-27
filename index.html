@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Swinging Mylar Simulation</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="title">Swinging Mylar Explorer</div>
+        <div class="stats">
+          <span id="fpsLabel">FPS: --</span>
+          <span id="stepLabel">Sim: -- Hz</span>
+        </div>
+      </header>
+      <main id="layout" class="split">
+        <section class="panel panel-2d">
+          <canvas id="view2d"></canvas>
+        </section>
+        <section class="panel panel-3d">
+          <canvas id="view3d"></canvas>
+        </section>
+      </main>
+      <section id="graphsPanel" class="graphs">
+        <canvas id="plotsCanvas"></canvas>
+      </section>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
