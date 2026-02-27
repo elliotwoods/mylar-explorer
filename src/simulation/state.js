@@ -34,7 +34,9 @@ export function createInitialState(params) {
       theta: 0,
       thetaDot: 0,
       thetaDDot: 0,
-      ramp: 0
+      ramp: 0,
+      prevTheta: 0,
+      prevThetaDot: 0
     },
     lowerWeight: {
       x: 0,

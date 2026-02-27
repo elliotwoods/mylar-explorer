@@ -27,6 +27,11 @@ src/
   main.js
   simulation/
     params.js
+    opticsParams.js
+    opticsState.js
+    opticsSetup.js
+    opticsUpdate.js
+    opticsMath.js
     state.js
     integrator.js
     forces.js
@@ -39,8 +44,11 @@ src/
     sheetMesh.js
     rigMeshes.js
     environment.js
+    spotlightRays.js
+    spotlightDebug.js
   ui/
     controls.js
+    opticsControls.js
     plots.js
   utils/
     math.js
@@ -88,6 +96,41 @@ Display controls include pause/play, reset, single-step, vectors/trails/graphs, 
 - For each frequency, simulation runs for `settleSeconds + dwellSeconds`.
 - App logs approximate response amplitudes at midpoint, bottom batten, and lower weight.
 - Curves are shown in the lower plot panel.
+
+## Spotlight / Optics (Option B)
+
+The spotlight subsystem is true 3D and follows the Option B interpretation:
+- Beam is defined once from the rest-state sheet footprint.
+- A 3D point source emits rays to UV samples over the *rest* sheet.
+- Those source ray directions are then fixed in world space.
+- During runtime, the moving deformed sheet intersects this fixed ray field.
+- Reflection is computed per-hit with ideal specular reflection.
+
+Runtime steps:
+1. Intersect each stored source ray with current deformed sheet mesh.
+2. If hit: compute hit point, orient geometric normal against incoming ray, compute reflected direction.
+3. Draw incident and reflected segments.
+4. If miss: record miss statistics and optionally draw faint miss rays.
+
+Important assumptions:
+- Point source only (no lens/cone/shutter/gobo model yet).
+- No intensity falloff model yet.
+- First hit only (no multi-bounce).
+- No volumetric beam rendering.
+- Both sheet sides are reflective.
+- Mechanical motion remains 2D-derived; optics are evaluated in full 3D on the extruded mesh.
+
+Controls:
+- `Spotlight / Optics` folder in GUI includes source XYZ, sample density, visibility toggles, ray opacity, freeze, rest-state preview, and beam rebuild.
+- Stats in the same folder show total rays, hit count, miss count, and hit fraction.
+
+2D overlay:
+- By default only center-width slice rays are shown in the 2D cross-section for readability.
+- Disable `centerSliceOnlyIn2D` to show a denser projected overlay.
+
+Debug helpers:
+- `log optics` GUI button
+- `window.mylarDebug.optics()` in console
 
 ## HDRI / Environment
 

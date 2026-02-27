@@ -3,6 +3,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { createSheetMesh } from "./sheetMesh.js";
 import { createRigMeshes } from "./rigMeshes.js";
 import { setupEnvironment } from "./environment.js";
+import { createSpotlightRays } from "./spotlightRays.js";
 
 export function create3DScene(canvas, params) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -32,6 +33,7 @@ export function create3DScene(canvas, params) {
   scene.add(sheet.mesh);
 
   const env = setupEnvironment(renderer, scene, params);
+  const spotlight = createSpotlightRays(scene, params);
 
   function setMaterialIntensity() {
     sheet.updateMaterial();
@@ -50,15 +52,21 @@ export function create3DScene(canvas, params) {
     camera.updateProjectionMatrix();
   }
 
-  function update(state) {
+  function syncState(state) {
     sheet.updateFromState(state);
     rig.updateFromState(state);
+  }
+
+  function update(state, opticsState) {
+    if (state) syncState(state);
+    if (opticsState) spotlight.updateFromState(opticsState);
     controls.update();
     renderer.render(scene, camera);
   }
 
   return {
     resize,
+    syncState,
     update,
     async refreshEnvironment() {
       await env.refresh();
@@ -80,6 +88,13 @@ export function create3DScene(canvas, params) {
       scene.add(sheet.mesh);
       setMaterialIntensity();
     },
+    getSheetMesh() {
+      return sheet.mesh;
+    },
+    updateOpticsStyle() {
+      spotlight.updateMaterials();
+      spotlight.updateVisibility();
+    },
     resetCamera() {
       camera.position.set(3.7, -2.2, 4.2);
       controls.target.set(0, -2.8, 0);
@@ -87,6 +102,7 @@ export function create3DScene(canvas, params) {
     },
     dispose() {
       env.dispose();
+      spotlight.dispose();
       sheet.dispose();
       renderer.dispose();
     }

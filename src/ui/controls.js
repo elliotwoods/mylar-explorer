@@ -1,8 +1,14 @@
 import GUI from "lil-gui";
 import { presets } from "../simulation/params.js";
+import { createOpticsControls } from "./opticsControls.js";
 
 export function createControls(params, hooks) {
   const gui = new GUI({ title: "Simulation Controls", width: 350 });
+
+  const sim = gui.addFolder("Simulation");
+  sim.add(params.display, "paused").name("pause");
+  sim.add(hooks, "reset").name("reset simulation");
+  sim.add(hooks, "singleStep").name("single-step");
 
   const geom = gui.addFolder("Geometry / Masses");
   geom.add(params.geometry, "sheetHeight", 2, 10, 0.1).onFinishChange(hooks.onMajorReset);
@@ -23,6 +29,9 @@ export function createControls(params, hooks) {
   drive.add(params.drive, "frequencyHz", 0.05, 4, 0.01);
   drive.add(params.drive, "phaseDeg", -180, 180, 1);
   drive.add(params.drive, "startupRampDuration", 0, 8, 0.1);
+  drive.add(params.drive, "jerkyEnabled").name("jerky mode");
+  drive.add(params.drive, "jerkiness", 0, 1, 0.01);
+  drive.add(params.drive, "jerkHarmonic", 2, 10, 1);
 
   const phys = gui.addFolder("Physics");
   phys.add(params.physics, "gravity", 0, 20, 0.01);
@@ -36,11 +45,9 @@ export function createControls(params, hooks) {
   phys.add(params.physics, "rideUpCoefficient", 0, 2, 0.01);
   phys.add(params.physics, "solverIterations", 2, 60, 1);
   phys.add(params.physics, "fixedDt", 1 / 1000, 1 / 60, 1 / 1000);
+  phys.add(params.physics, "maxSubStepsPerFrame", 1, 30, 1);
 
   const display = gui.addFolder("Display");
-  display.add(params.display, "paused");
-  display.add(hooks, "reset").name("reset");
-  display.add(hooks, "singleStep").name("single-step");
   display.add(params.display, "showTrails");
   display.add(params.display, "showVectors");
   display.add(params.display, "showGraphs").onChange(hooks.onDisplayChange);
@@ -73,6 +80,8 @@ export function createControls(params, hooks) {
   const presetFolder = gui.addFolder("Presets");
   presetFolder.add(presetObj, "preset", Object.keys(presets));
   presetFolder.add(presetObj, "applyPreset");
+
+  createOpticsControls(gui, params, hooks, hooks.opticsStats);
 
   return { gui };
 }

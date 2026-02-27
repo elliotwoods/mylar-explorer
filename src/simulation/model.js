@@ -63,8 +63,24 @@ export class SimulationModel {
     integrateVerlet(s, dt);
     solveConstraints(s, this.params);
     updateVelocitiesFromPositions(s, dt);
+    if (!this.isStateFinite()) {
+      console.warn("[sim] state became unstable; auto-resetting");
+      this.reset();
+      return;
+    }
     this.updateMetrics(dt);
     this.updateScan(dt);
+  }
+
+  isStateFinite() {
+    for (let i = 0; i < this.state.nodes.length; i += 1) {
+      const n = this.state.nodes[i];
+      if (!Number.isFinite(n.x) || !Number.isFinite(n.y) || !Number.isFinite(n.vx) || !Number.isFinite(n.vy)) {
+        return false;
+      }
+      if (Math.abs(n.x) > 1e5 || Math.abs(n.y) > 1e5) return false;
+    }
+    return true;
   }
 
   updateScan(dt) {

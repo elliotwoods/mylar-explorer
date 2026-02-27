@@ -16,18 +16,27 @@ export function updateDriveSignal(state, params, dt) {
   }
   if (!params.drive.enabled) ramp = 0;
 
-  const s = Math.sin(w * state.t + phase);
-  const c = Math.cos(w * state.t + phase);
-  state.drive.ramp = ramp;
-  state.drive.theta = amp * ramp * s;
-  state.drive.thetaDot = amp * ramp * w * c;
-  state.drive.thetaDDot = -amp * ramp * w * w * s;
-
-  if (params.drive.startupRampDuration > 0 && state.t < params.drive.startupRampDuration) {
-    const dramp = (6 * (state.t / params.drive.startupRampDuration) * (1 - state.t / params.drive.startupRampDuration)) /
-      params.drive.startupRampDuration;
-    state.drive.thetaDot += amp * dramp * s;
+  const wt = w * state.t + phase;
+  const s = Math.sin(wt);
+  let driveShape = s;
+  if (params.drive.jerkyEnabled) {
+    const k = Math.max(1, params.drive.jerkHarmonic);
+    const mix =
+      Math.sin(wt) +
+      0.35 * Math.sin(k * wt + 0.5) +
+      0.22 * Math.sin((k + 2) * wt + 1.15);
+    const sharpness = 1 + params.drive.jerkiness * 12;
+    driveShape = Math.tanh(sharpness * mix) / Math.tanh(sharpness);
   }
+
+  state.drive.ramp = ramp;
+  state.drive.theta = amp * ramp * driveShape;
+
+  // Numeric derivatives support both smooth sine and intentionally jerky profiles.
+  state.drive.thetaDot = (state.drive.theta - state.drive.prevTheta) / Math.max(dt, 1e-6);
+  state.drive.thetaDDot = (state.drive.thetaDot - state.drive.prevThetaDot) / Math.max(dt, 1e-6);
+  state.drive.prevTheta = state.drive.theta;
+  state.drive.prevThetaDot = state.drive.thetaDot;
 
   state.t += dt;
 }

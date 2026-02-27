@@ -1,3 +1,5 @@
+import { defaultOpticsParams } from "./opticsParams.js";
+
 export const defaultParams = {
   geometry: {
     sheetHeight: 6,
@@ -17,7 +19,10 @@ export const defaultParams = {
     amplitudeDeg: 5,
     frequencyHz: 1,
     phaseDeg: 0,
-    startupRampDuration: 1.5
+    startupRampDuration: 1.5,
+    jerkyEnabled: false,
+    jerkiness: 0.45,
+    jerkHarmonic: 4
   },
   physics: {
     gravity: 9.81,
@@ -30,14 +35,15 @@ export const defaultParams = {
     rideUpEnabled: true,
     rideUpCoefficient: 0.25,
     solverIterations: 18,
-    fixedDt: 1 / 240
+    fixedDt: 1 / 240,
+    maxSubStepsPerFrame: 10
   },
   display: {
     paused: false,
     showTrails: true,
     showVectors: false,
     showGraphs: true,
-    showNodeMarkers: false,
+    showNodeMarkers: true,
     viewMode: "split",
     envIntensity: 1,
     roughness: 0.18,
@@ -51,7 +57,8 @@ export const defaultParams = {
     fMax: 3,
     dwellSeconds: 5,
     settleSeconds: 2
-  }
+  },
+  optics: { ...defaultOpticsParams }
 };
 
 export const presets = {
