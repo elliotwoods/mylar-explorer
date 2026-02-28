@@ -46,9 +46,21 @@ src/
     environment.js
     spotlightRays.js
     spotlightDebug.js
+    volumetricDebug.js
+  volumetrics/
+    volumetricParams.js
+    volumetricState.js
+    volumetricBounds.js
+    volumetricMath.js
+    volumeTextures.js
+    beamInjectionCPU.js
+    beamInjectionGPU.js
+    temporalAccumulation.js
+    volumetricPass.js
   ui/
     controls.js
     opticsControls.js
+    volumetricControls.js
     plots.js
   utils/
     math.js
@@ -116,7 +128,6 @@ Important assumptions:
 - Point source only (no lens/cone/shutter/gobo model yet).
 - No intensity falloff model yet.
 - First hit only (no multi-bounce).
-- No volumetric beam rendering.
 - Both sheet sides are reflective.
 - Mechanical motion remains 2D-derived; optics are evaluated in full 3D on the extruded mesh.
 
@@ -131,6 +142,138 @@ Controls:
 Debug helpers:
 - `log optics` GUI button
 - `window.mylarDebug.optics()` in console
+
+## Volumetric Haze / God Rays (Froxel + Raymarch)
+
+The app now includes a volumetric participating-media subsystem that consumes the existing reflected-ray output.
+
+Architecture per frame:
+1. `opticsUpdate` computes reflected hit points and directions from the moving sheet.
+2. Reflected beam energy is injected into a bounded, low-resolution world-space froxel volume (`Data3DTexture`).
+3. A custom post pass raymarches the volume from the camera.
+4. The volumetric result is composited over scene color.
+
+This preserves key behavior:
+- Convergence brightness: overlapping reflected rays deposit into the same froxels and intensify.
+- Dispersion dimming: rays spreading out distribute energy across more froxels.
+- Additive compounding: multiple beam paths naturally add in the volume.
+
+### Stage-space Volume
+
+Default volume bounds:
+- width: `20m`
+- height: `12m`
+- depth: `20m`
+- centered around the sheet/beam space (adjustable in GUI)
+
+Default froxel resolution:
+- `120 x 68 x 48` (medium)
+
+Presets:
+- low: `80 x 45 x 32`
+- high: `160 x 90 x 64`
+
+### Injection + Accumulation
+
+Current production path:
+- CPU beam injection (`beamInjectionCPU.js`)
+- GPU raymarch/composite (`volumetricPass.js`)
+
+Injection details:
+- Each valid reflected ray carries equal energy (scaled by `injectionIntensity`).
+- Ray is clipped against volumetric AABB.
+- Sampled along ray at configurable `beamStepSize`.
+- Deposited into froxels via nearest/trilinear/small soft-kernel behavior (radius-controlled).
+
+Temporal options:
+- `clearEachFrame` for strict per-frame rebuild.
+- Optional temporal accumulation with exponential-style blending:
+  - `temporalDecay`
+  - `temporalBlend`
+
+### Raymarch + Composite
+
+Raymarch pass:
+- Reconstructs per-pixel world ray from camera matrices.
+- Intersects view ray with volumetric bounds.
+- Marches through volume samples with Beer-Lambert transmittance.
+- Adds single-scatter contribution (with lightweight anisotropy bias).
+- Early exits when transmittance is very low.
+
+Composite:
+- `scene + volumetrics` (default)
+- `volumetric-only`
+- `scene-only`
+- dedicated `reflected-rays-only` debug mode
+
+### Controls and Presets
+
+New GUI section: `Volumetric Haze / God Rays`
+
+Includes:
+- enable/disable
+- render debug mode
+- volume bounds center/size
+- froxel resolution X/Y/Z and resolution preset buttons
+- beam injection step/radius/intensity/max distance
+- temporal accumulation toggles and factors
+- raymarch step count and max distance
+- reduced-resolution pass mode (`quarter` / `half` / `full`)
+- haze/scattering/extinction/anisotropy controls
+- final intensity and composite opacity
+- debug bounds box and slice viewer (XY/XZ/YZ + slice position)
+
+Look presets:
+- Subtle haze
+- Strong theatrical haze
+- Tight concentrated beams
+- Soft dispersed beams
+- Performance mode
+- Quality mode
+
+### Debug + Stats
+
+Volumetric debug tools:
+- world-space bounds box
+- reflected-rays-only mode
+- volumetric-only mode
+- scene+volumetrics mode
+- 3D slice plane viewer sampling the froxel field
+
+Live stats:
+- valid reflected rays
+- injected rays
+- average hit fraction
+- volume resolution
+- raymarch step count
+- frame ms and FPS
+
+### Performance Notes
+
+- WebGL2 is required for the volumetric pass (`sampler3D`/`Data3DTexture` path).
+- Main perf levers:
+  - froxel resolution
+  - raymarch step count
+  - pass resolution scale (`quarter`/`half`/`full`)
+  - beam step size
+  - deposition radius
+- `Performance mode` preset combines lower froxel/raymarch cost with temporal smoothing.
+
+### Known Limitations
+
+- Injection is CPU-based in current shipping path (GPU path scaffold exists in `beamInjectionGPU.js`).
+- Single scattering only; no multiple scattering.
+- No volumetric shadowing from arbitrary scene geometry.
+- No depth-aware occlusion of volume by scene depth yet.
+- Beam energy model is intentionally simple (equal per valid reflected ray).
+
+### Future Improvement Path
+
+- Move injection toward GPU segment upload + slice deposition shaders.
+- Add optional RGB energy field.
+- Add depth-aware scene occlusion in raymarch composite.
+- Add richer per-ray weighting (distance/Fresnel/source profile).
+- Add camera-stable jitter + more advanced temporal reprojection.
 
 ## HDRI / Environment
 

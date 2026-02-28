@@ -1,4 +1,5 @@
 import { defaultOpticsParams } from "./opticsParams.js";
+import { defaultVolumetricParams } from "../volumetrics/volumetricParams.js";
 
 export const defaultParams = {
   geometry: {
@@ -68,7 +69,8 @@ export const defaultParams = {
     dwellSeconds: 5,
     settleSeconds: 2
   },
-  optics: { ...defaultOpticsParams }
+  optics: { ...defaultOpticsParams },
+  volumetrics: { ...defaultVolumetricParams }
 };
 
 export const presets = {

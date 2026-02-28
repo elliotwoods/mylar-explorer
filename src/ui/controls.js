@@ -1,5 +1,6 @@
 import GUI from "lil-gui";
 import { createOpticsControls } from "./opticsControls.js";
+import { createVolumetricControls } from "./volumetricControls.js";
 import { sheetMassFromThickness, flexuralRigidity, PET_DENSITY, PET_YOUNGS_MODULUS } from "../simulation/material.js";
 
 function withIcon(text, iconClass) {
@@ -108,6 +109,7 @@ export function createControls(params, hooks, mounts) {
   add(display, params.display, "fallbackEnvironmentEnabled", "Fallback Environment", "Use RoomEnvironment when HDRI unavailable.").onChange(hooks.onEnvironmentChange);
 
   createOpticsControls(rightGui, params, hooks, hooks.opticsStats);
+  createVolumetricControls(rightGui, params, hooks, hooks.volumetricStats);
 
   return {
     guiLeft: leftGui,

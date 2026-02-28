@@ -51,6 +51,7 @@ export function createRigMeshes(scene, params) {
 
   return {
     materials: [topBatten.material, bottomBatten.material, weight.material, linkMaterial],
+    meshes: [support, topBatten, bottomBatten, weight, linkA, linkB, floor],
     updateFromState(state) {
       const top = state.nodes[0];
       const bottom = state.nodes[state.nodes.length - 1];
@@ -91,6 +92,15 @@ export function createRigMeshes(scene, params) {
         28
       );
       weight.geometry.rotateZ(Math.PI * 0.5);
+    },
+    setVisible(visible) {
+      support.visible = visible;
+      topBatten.visible = visible;
+      bottomBatten.visible = visible;
+      weight.visible = visible;
+      linkA.visible = visible;
+      linkB.visible = visible;
+      floor.visible = visible;
     }
   };
 }

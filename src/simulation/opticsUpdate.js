@@ -143,11 +143,14 @@ export function updateOptics(params, opticsState, targetMesh, options = {}) {
   const force = !!options.force;
   if (!params.optics.enabled || !targetMesh) {
     const runtime = opticsState.runtime;
+    runtime.totalRays = 0;
     runtime.hitCount = 0;
     runtime.missCount = 0;
     runtime.hitFraction = 0;
     runtime.incidentPositions = new Float32Array();
     runtime.reflectedPositions = new Float32Array();
+    runtime.reflectedRaySamples = new Float32Array();
+    runtime.reflectedRayCount = 0;
     runtime.missPositions = new Float32Array();
     runtime.hitPointPositions = new Float32Array();
     runtime.overlay2d = {
@@ -171,6 +174,7 @@ export function updateOptics(params, opticsState, targetMesh, options = {}) {
   const drawStride = Math.max(1, Math.ceil(estimatedTracedRays / Math.max(1, params.optics.maxRenderedRays)));
   const inc = [];
   const refl = [];
+  const reflectedSamples = [];
   const miss = [];
   const hitPts = [];
   const overlay = {
@@ -226,6 +230,7 @@ export function updateOptics(params, opticsState, targetMesh, options = {}) {
       const n = orientNormalAgainstIncoming(hit.normal, _incoming);
       _ref.copy(reflectDirection(_incoming, n));
       _vA.copy(_point).addScaledVector(_ref, params.optics.reflectedLength);
+      reflectedSamples.push(_point.x, _point.y, _point.z, _ref.x, _ref.y, _ref.z);
 
       if (inDrawSet) {
         pushSeg(inc, origin, _point);
@@ -262,6 +267,8 @@ export function updateOptics(params, opticsState, targetMesh, options = {}) {
   runtime.hitFraction = tracedCount > 0 ? (hitCount / tracedCount) * 100 : 0;
   runtime.incidentPositions = new Float32Array(inc);
   runtime.reflectedPositions = new Float32Array(refl);
+  runtime.reflectedRaySamples = new Float32Array(reflectedSamples);
+  runtime.reflectedRayCount = hitCount;
   runtime.missPositions = new Float32Array(miss);
   runtime.hitPointPositions = new Float32Array(hitPts);
   runtime.overlay2d = overlay;

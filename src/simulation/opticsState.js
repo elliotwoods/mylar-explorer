@@ -9,6 +9,8 @@ export function createOpticsState() {
       hitFraction: 0,
       incidentPositions: new Float32Array(),
       reflectedPositions: new Float32Array(),
+      reflectedRaySamples: new Float32Array(),
+      reflectedRayCount: 0,
       missPositions: new Float32Array(),
       hitPointPositions: new Float32Array(),
       overlay2d: {

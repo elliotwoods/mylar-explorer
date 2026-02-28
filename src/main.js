@@ -106,9 +106,11 @@ const hooks = {
     scene3d.updateMaterialParams();
   },
   onDisplayChange: () => updateDisplayLayout(),
+  onVolumetricConfigChange: () => scene3d.invalidateVolumetrics(),
   rebuildBeam,
   logOptics: () => logOpticsState(opticsState),
-  opticsStats
+  opticsStats,
+  volumetricStats: scene3d.getVolumetricStats()
 };
 
 const controls = createControls(params, hooks, { left: widgetsLeftEl, right: widgetsRightEl });
@@ -154,6 +156,7 @@ function applyParamSnapshot(snapshot) {
   if (snapshot.display) Object.assign(params.display, snapshot.display);
   if (snapshot.scan) Object.assign(params.scan, snapshot.scan);
   if (snapshot.optics) Object.assign(params.optics, snapshot.optics);
+  if (snapshot.volumetrics) Object.assign(params.volumetrics, snapshot.volumetrics);
 
   hardResetSimulation();
   scene3d.updateMaterialParams();
@@ -171,6 +174,7 @@ createToolbar({
     display: structuredClone(params.display),
     scan: structuredClone(params.scan),
     optics: structuredClone(params.optics),
+    volumetrics: structuredClone(params.volumetrics),
     cameraPose: scene3d.getCameraPose()
   }),
   applySnapshot: (snapshot) => {
@@ -248,7 +252,7 @@ function frame(now) {
   syncOpticsStats();
 
   renderer2d.draw(model.state, opticsState);
-  scene3d.update(null, opticsState);
+  scene3d.update(null, opticsState, { frameDt });
   scene3d.updateOpticsStyle();
   if (params.display.showGraphs) plots.draw(model.state);
 

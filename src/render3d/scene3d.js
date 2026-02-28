@@ -1,9 +1,27 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { createSheetMesh } from "./sheetMesh.js";
 import { createRigMeshes } from "./rigMeshes.js";
 import { setupEnvironment } from "./environment.js";
 import { createSpotlightRays } from "./spotlightRays.js";
+import { createVolumetricDebug } from "./volumetricDebug.js";
+import { injectReflectedBeamsGPU } from "../volumetrics/beamInjectionGPU.js";
+import { injectReflectedBeamsCPU } from "../volumetrics/beamInjectionCPU.js";
+import { getVolumetricBounds } from "../volumetrics/volumetricBounds.js";
+import {
+  createVolumetricState,
+  disposeVolumetricState,
+  ensureVolumetricBuffers,
+  resetVolumetricHistory
+} from "../volumetrics/volumetricState.js";
+import { applyTemporalAccumulation } from "../volumetrics/temporalAccumulation.js";
+import { VolumetricPass } from "../volumetrics/volumetricPass.js";
+
+const _source = new THREE.Vector3();
+const _volumeCenter = new THREE.Vector3();
+const _primaryLightDir = new THREE.Vector3(0, -0.4, 1).normalize();
 
 export function create3DScene(canvas, params) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -47,6 +65,23 @@ export function create3DScene(canvas, params) {
   const env = setupEnvironment(renderer, scene, params);
   const spotlight = createSpotlightRays(scene, params);
 
+  const webgl2Ready = renderer.capabilities.isWebGL2;
+  if (!webgl2Ready) {
+    console.warn("[volumetrics] WebGL2 unavailable. Volumetric pass disabled.");
+  }
+
+  const volumetricState = createVolumetricState(params);
+  volumetricState.stats.webgl2Ready = webgl2Ready;
+  const volumetricDebug = createVolumetricDebug(scene);
+
+  const composer = new EffectComposer(renderer);
+  composer.setPixelRatio(renderer.getPixelRatio());
+  const renderPass = new RenderPass(scene, camera);
+  composer.addPass(renderPass);
+  const volumetricPass = new VolumetricPass(camera, params, volumetricState);
+  volumetricPass.enabled = webgl2Ready;
+  composer.addPass(volumetricPass);
+
   function setMaterialIntensity() {
     sheet.updateMaterial();
     for (const mat of rig.materials) {
@@ -60,6 +95,8 @@ export function create3DScene(canvas, params) {
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
     renderer.setSize(w, h, false);
+    composer.setPixelRatio(renderer.getPixelRatio());
+    composer.setSize(w, h);
     camera.aspect = w / Math.max(1, h);
     camera.updateProjectionMatrix();
   }
@@ -103,11 +140,106 @@ export function create3DScene(canvas, params) {
     updateStageSpotFromOptics();
   }
 
-  function update(state, opticsState) {
+  function updateRenderMode() {
+    const reflectedOnly = params.volumetrics.debugRenderMode === "reflected-rays-only";
+    const sceneOnly = params.volumetrics.debugRenderMode === "scene-only";
+    const hideRayDebug = params.volumetrics.enabled && !params.volumetrics.showRays;
+    const needsVolumetricPass =
+      webgl2Ready &&
+      params.volumetrics.enabled &&
+      !reflectedOnly &&
+      !sceneOnly;
+
+    sheet.mesh.visible = !reflectedOnly;
+    rig.setVisible(!reflectedOnly);
+    stageSpot.visible = params.optics.enabled && !reflectedOnly;
+    spotlight.setDebugMode(reflectedOnly ? "reflected-only" : hideRayDebug ? "hidden" : "default");
+    volumetricPass.enabled = needsVolumetricPass;
+  }
+
+  function updatePrimaryLightDirection() {
+    _source.set(params.optics.sourceX, params.optics.sourceY, params.optics.sourceZ);
+    _volumeCenter.copy(volumetricState.boundsMin).add(volumetricState.boundsMax).multiplyScalar(0.5);
+    _primaryLightDir.subVectors(_volumeCenter, _source);
+    if (_primaryLightDir.lengthSq() < 1e-8) _primaryLightDir.set(0, -0.4, 1);
+    _primaryLightDir.normalize();
+    volumetricPass.raymarchMaterial.uniforms.uPrimaryLightDir.value.copy(_primaryLightDir);
+  }
+
+  function updateVolumetrics(opticsState, frameDt) {
+    const stats = volumetricState.stats;
+    stats.enabled = !!params.volumetrics.enabled;
+    stats.webgl2Ready = webgl2Ready;
+    stats.averageHitFraction = `${(opticsState?.runtime?.hitFraction ?? 0).toFixed(1)}%`;
+    stats.raymarchSteps = Math.max(1, Math.floor(params.volumetrics.raymarchStepCount));
+    stats.frameMs = `${(Math.max(0, frameDt) * 1000).toFixed(1)}`;
+    stats.fps = `${(1 / Math.max(1e-4, frameDt)).toFixed(1)}`;
+
+    const resized = ensureVolumetricBuffers(volumetricState, params);
+    if (resized) {
+      resetVolumetricHistory(volumetricState);
+    }
+
+    getVolumetricBounds(params, volumetricState.boundsMin, volumetricState.boundsMax);
+    stats.volumeResolution = `${volumetricState.resolution.x}x${volumetricState.resolution.y}x${volumetricState.resolution.z}`;
+
+    volumetricDebug.updateBounds(volumetricState.boundsMin, volumetricState.boundsMax, params.volumetrics.showBounds);
+
+    if (!webgl2Ready || !params.volumetrics.enabled) {
+      stats.validReflectedRays = 0;
+      stats.injectedRays = 0;
+      volumetricDebug.updateSlice(params, volumetricState.boundsMin, volumetricState.boundsMax, null);
+      return;
+    }
+
+    if (!params.volumetrics.clearEachFrame && !params.volumetrics.temporalAccumulation) {
+      const decay = Math.max(0, Math.min(0.9999, params.volumetrics.temporalDecay));
+      for (let i = 0; i < volumetricState.volumeData.length; i += 1) {
+        volumetricState.volumeData[i] *= decay;
+      }
+    }
+
+    const usedGpuInjection = injectReflectedBeamsGPU({
+      params,
+      opticsState,
+      volumeData: volumetricState.volumeData,
+      resolution: volumetricState.resolution,
+      boundsMin: volumetricState.boundsMin,
+      boundsMax: volumetricState.boundsMax,
+      stats
+    });
+    if (!usedGpuInjection) {
+      injectReflectedBeamsCPU({
+        params,
+        opticsState,
+        volumeData: volumetricState.volumeData,
+        resolution: volumetricState.resolution,
+        boundsMin: volumetricState.boundsMin,
+        boundsMax: volumetricState.boundsMax,
+        stats
+      });
+    }
+
+    applyTemporalAccumulation(volumetricState.volumeData, volumetricState.historyData, params);
+    volumetricState.volumeTexture.needsUpdate = true;
+    volumetricState.frameIndex += 1;
+
+    updatePrimaryLightDirection();
+    volumetricDebug.updateSlice(
+      params,
+      volumetricState.boundsMin,
+      volumetricState.boundsMax,
+      volumetricState.volumeTexture
+    );
+  }
+
+  function update(state, opticsState, frameInfo = {}) {
     if (state) syncState(state);
     if (opticsState) spotlight.updateFromState(opticsState);
+    updateRenderMode();
+    updateVolumetrics(opticsState, frameInfo.frameDt ?? 1 / 60);
     controls.update();
-    renderer.render(scene, camera);
+    composer.render();
   }
 
   return {
@@ -142,6 +274,7 @@ export function create3DScene(canvas, params) {
     updateOpticsStyle() {
       spotlight.updateMaterials();
       spotlight.updateVisibility();
+      updateRenderMode();
     },
     resetCamera() {
       camera.position.set(defaultCameraPose.position.x, defaultCameraPose.position.y, defaultCameraPose.position.z);
@@ -164,10 +297,20 @@ export function create3DScene(canvas, params) {
       }
       controls.update();
     },
+    invalidateVolumetrics() {
+      resetVolumetricHistory(volumetricState);
+    },
+    getVolumetricStats() {
+      return volumetricState.stats;
+    },
     dispose() {
       env.dispose();
       spotlight.dispose();
       sheet.dispose();
+      volumetricDebug.dispose();
+      disposeVolumetricState(volumetricState);
+      volumetricPass.dispose();
+      composer.dispose();
       renderer.dispose();
     }
   };

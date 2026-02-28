@@ -45,9 +45,22 @@ export function createSpotlightRays(scene, params) {
   });
   const hitPoints = new THREE.Points(hitGeom, hitMat);
   group.add(hitPoints);
+  let debugMode = "default";
 
   function updateVisibility() {
+    if (debugMode === "hidden") {
+      group.visible = false;
+      return;
+    }
     group.visible = params.optics.enabled;
+    if (debugMode === "reflected-only") {
+      sourceGroup.visible = false;
+      incidentLine.visible = false;
+      reflectedLine.visible = true;
+      missLine.visible = false;
+      hitPoints.visible = false;
+      return;
+    }
     sourceGroup.visible = params.optics.sourceVisible;
     incidentLine.visible = params.optics.incidentVisible;
     reflectedLine.visible = params.optics.reflectedVisible;
@@ -83,6 +96,10 @@ export function createSpotlightRays(scene, params) {
     updateFromState,
     updateVisibility,
     updateMaterials,
+    setDebugMode(mode) {
+      debugMode = mode || "default";
+      updateVisibility();
+    },
     dispose() {
       incidentLine.geometry.dispose();
       reflectedLine.geometry.dispose();
