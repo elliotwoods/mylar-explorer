@@ -76,10 +76,11 @@ function missEndpoint(origin, dir, params) {
 }
 
 function buildFastProfile(targetMesh, params) {
-  const rows = Math.max(2, Math.floor(params.geometry.segments) + 1);
   const pos = targetMesh.geometry?.attributes?.position;
-  if (!pos || pos.count < rows) return null;
-  const cols = Math.max(2, Math.floor(pos.count / rows));
+  if (!pos || pos.count < 4) return null;
+  const cols = targetMesh.userData?.sheetCols || 13;
+  const rows = Math.max(2, Math.floor(pos.count / cols));
+  if (rows * cols > pos.count) return null;
   const midCol = Math.floor(cols * 0.5);
   const profile = [];
 

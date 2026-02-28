@@ -88,6 +88,16 @@ export function create3DScene(canvas, params) {
   }
 
   function syncState(state) {
+    const simSegments = Math.max(2, state.nodes.length - 1);
+    const renderMul = Math.max(1, Math.floor(params.display.renderSubdivision || 1));
+    const targetSegments = Math.max(simSegments, simSegments * renderMul);
+    if (sheet.heightSegments !== targetSegments) {
+      scene.remove(sheet.mesh);
+      sheet.dispose();
+      sheet = createSheetMesh(params, { heightSegments: targetSegments });
+      scene.add(sheet.mesh);
+      setMaterialIntensity();
+    }
     sheet.updateFromState(state);
     rig.updateFromState(state);
     updateStageSpotFromOptics();
@@ -120,7 +130,9 @@ export function create3DScene(canvas, params) {
     rebuildSheetGeometry() {
       scene.remove(sheet.mesh);
       sheet.dispose();
-      sheet = createSheetMesh(params);
+      const baseSeg = Math.max(2, Math.floor(params.geometry.segments));
+      const renderMul = Math.max(1, Math.floor(params.display.renderSubdivision || 1));
+      sheet = createSheetMesh(params, { heightSegments: Math.max(baseSeg, baseSeg * renderMul) });
       scene.add(sheet.mesh);
       setMaterialIntensity();
     },

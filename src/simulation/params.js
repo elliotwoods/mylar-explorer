@@ -4,7 +4,7 @@ export const defaultParams = {
   geometry: {
     sheetHeight: 6,
     sheetWidth: 1.2,
-    segments: 60,
+    segments: 256,
     sheetMassTotal: 1.4,
     topBattenMass: 5,
     topBattenDiameter: 0.05,
@@ -23,10 +23,8 @@ export const defaultParams = {
     jerkyEnabled: false,
     jerkiness: 0.45,
     jerkHarmonic: 4,
-    motorTorquePerMotorNm: 8,
-    motorTorqueAvailableNm: 16,
-    motorBandwidthHz: 4,
-    motorDampingRatio: 1.0
+    manualOverrideEnabled: false,
+    manualOverrideDeg: 0
   },
   physics: {
     gravity: 9.81,
@@ -38,6 +36,10 @@ export const defaultParams = {
     lowerWeightDragCoefficient: 0.25,
     rideUpEnabled: true,
     rideUpCoefficient: 0.25,
+    motorMaxRpm: 90,
+    motorMaxTorquePerMotorNm: 8,
+    motorResponseHz: 4,
+    motorDampingRatio: 1.0,
     solverIterations: 18,
     fixedDt: 1 / 240,
     maxSubStepsPerFrame: 10
@@ -48,6 +50,9 @@ export const defaultParams = {
     showVectors: false,
     showGraphs: true,
     showNodeMarkers: true,
+    renderSubdivision: 2,
+    wireframeView: false,
+    simSpeed: 1,
     viewMode: "split",
     envIntensity: 2.2,
     roughness: 0.02,

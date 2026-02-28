@@ -20,6 +20,14 @@ const canvas2d = document.getElementById("view2d");
 const canvas3d = document.getElementById("view3d");
 const plotsCanvas = document.getElementById("plotsCanvas");
 const toolbarEl = document.getElementById("toolbar");
+const widgetsLeftEl = document.getElementById("widgetsLeft");
+const widgetsRightEl = document.getElementById("widgetsRight");
+const btnPause = document.getElementById("btnPause");
+const btnReset = document.getElementById("btnReset");
+const btnStep = document.getElementById("btnStep");
+const btnHalf = document.getElementById("btnHalf");
+const btn1x = document.getElementById("btn1x");
+const btnDouble = document.getElementById("btnDouble");
 const layout = document.getElementById("layout");
 const fpsLabel = document.getElementById("fpsLabel");
 const stepLabel = document.getElementById("stepLabel");
@@ -61,6 +69,14 @@ function hardResetSimulation() {
   accumulator = 0;
 }
 
+function updatePauseButtonLabel() {
+  btnPause.textContent = params.display.paused ? "Play" : "Pause";
+}
+
+function setSpeed(value) {
+  params.display.simSpeed = Math.max(0.0625, Math.min(16, value));
+}
+
 const hooks = {
   reset: () => hardResetSimulation(),
   singleStep: () => {
@@ -78,6 +94,10 @@ const hooks = {
     hardResetSimulation();
   },
   onMaterialChange: () => scene3d.updateMaterialParams(),
+  onRenderGeometryChange: () => {
+    scene3d.rebuildSheetGeometry();
+    scene3d.syncState(model.state);
+  },
   onOpticsRebuild: () => rebuildBeam(),
   onEnvironmentChange: async () => {
     await scene3d.refreshEnvironment();
@@ -89,7 +109,7 @@ const hooks = {
   opticsStats
 };
 
-const controls = createControls(params, hooks);
+const controls = createControls(params, hooks, { left: widgetsLeftEl, right: widgetsRightEl });
 
 function applyParamSnapshot(snapshot) {
   if (!snapshot) return;
@@ -127,6 +147,17 @@ createToolbar({
   refreshGui: () => controls.refresh()
 });
 
+btnPause.addEventListener("click", () => {
+  params.display.paused = !params.display.paused;
+  updatePauseButtonLabel();
+});
+btnReset.addEventListener("click", () => hardResetSimulation());
+btnStep.addEventListener("click", () => hooks.singleStep());
+btnHalf.addEventListener("click", () => setSpeed(params.display.simSpeed * 0.5));
+btn1x.addEventListener("click", () => setSpeed(1));
+btnDouble.addEventListener("click", () => setSpeed(params.display.simSpeed * 2));
+updatePauseButtonLabel();
+
 window.mylarDebug = {
   environment: () => scene3d.getEnvironmentDiagnostics(),
   optics: () => logOpticsState(opticsState)
@@ -161,7 +192,8 @@ function frame(now) {
   }
   const frameDt = Math.min(0.08, (now - lastTime) / 1000);
   lastTime = now;
-  accumulator += frameDt;
+  accumulator += frameDt * params.display.simSpeed;
+  updatePauseButtonLabel();
 
   const fixedDt = params.physics.fixedDt;
   let steps = 0;

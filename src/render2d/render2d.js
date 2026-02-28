@@ -111,27 +111,25 @@ export function create2DRenderer(canvas, params) {
     const bottomP = worldToScreen(bottom.x, bottom.y, scale, ox, oy);
     const weightP = worldToScreen(wt.x, wt.y, scale, ox, oy);
 
-    ctx.strokeStyle = "#e3b56a";
-    ctx.lineWidth = Math.max(2, params.geometry.topBattenDiameter * scale);
+    // Edge-on 2D cross-section: width-axis geometry collapses to centerline.
+    // Battens are represented by circular cross-sections, and linkage by centerline.
+    ctx.fillStyle = "#e3b56a";
+    const topR = Math.max(2, params.geometry.topBattenDiameter * scale * 0.5);
     ctx.beginPath();
-    ctx.moveTo(topP.sx - 50, topP.sy);
-    ctx.lineTo(topP.sx + 50, topP.sy);
-    ctx.stroke();
+    ctx.arc(topP.sx, topP.sy, topR, 0, Math.PI * 2);
+    ctx.fill();
 
-    ctx.strokeStyle = "#9cd89f";
-    ctx.lineWidth = Math.max(2, params.geometry.bottomBattenDiameter * scale);
+    ctx.fillStyle = "#9cd89f";
+    const bottomR = Math.max(2, params.geometry.bottomBattenDiameter * scale * 0.5);
     ctx.beginPath();
-    ctx.moveTo(bottomP.sx - 50, bottomP.sy);
-    ctx.lineTo(bottomP.sx + 50, bottomP.sy);
-    ctx.stroke();
+    ctx.arc(bottomP.sx, bottomP.sy, bottomR, 0, Math.PI * 2);
+    ctx.fill();
 
     ctx.strokeStyle = "#ffd280";
     ctx.lineWidth = 1.7;
     ctx.beginPath();
-    ctx.moveTo(bottomP.sx - 45, bottomP.sy);
-    ctx.lineTo(weightP.sx - 45, weightP.sy);
-    ctx.moveTo(bottomP.sx + 45, bottomP.sy);
-    ctx.lineTo(weightP.sx + 45, weightP.sy);
+    ctx.moveTo(bottomP.sx, bottomP.sy);
+    ctx.lineTo(weightP.sx, weightP.sy);
     ctx.stroke();
 
     ctx.fillStyle = "#f5f3cb";

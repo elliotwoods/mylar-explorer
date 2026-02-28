@@ -1,4 +1,4 @@
-function solveDistance(a, b, restLength) {
+function solveDistance(a, b, restLength, stiffness = 1) {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const d = Math.hypot(dx, dy) || 1e-6;
@@ -8,7 +8,7 @@ function solveDistance(a, b, restLength) {
 
   const w = a.invMass + b.invMass;
   if (w <= 0) return;
-  const corr = err / w;
+  const corr = err / w * stiffness;
 
   if (!a.pinned) {
     a.x += nx * corr * a.invMass;
@@ -22,10 +22,14 @@ function solveDistance(a, b, restLength) {
 
 export function solveConstraints(state, params) {
   const nodes = state.nodes;
-  const iters = Math.max(2, Math.floor(params.physics.solverIterations));
-  const baseLength = params.geometry.sheetHeight / params.geometry.segments;
+  const segmentCount = Math.max(1, nodes.length - 1);
+  const baseIters = Math.max(2, Math.floor(params.physics.solverIterations));
+  // Keep apparent stretch stiffness roughly consistent as segment count grows.
+  const segScale = Math.sqrt(segmentCount / 60);
+  const iters = Math.min(180, Math.max(2, Math.floor(baseIters * segScale)));
+  const baseLength = params.geometry.sheetHeight / segmentCount;
   const effectiveLength = Math.max(0.6 * params.geometry.sheetHeight, params.geometry.sheetHeight - state.rideUpAmount);
-  const restLength = effectiveLength / params.geometry.segments;
+  const restLength = effectiveLength / segmentCount;
 
   for (let iter = 0; iter < iters; iter += 1) {
     nodes[0].x = 0;
@@ -35,11 +39,16 @@ export function solveConstraints(state, params) {
     for (let i = 0; i < nodes.length - 1; i += 1) {
       solveDistance(nodes[i], nodes[i + 1], restLength);
     }
+    for (let i = nodes.length - 2; i >= 0; i -= 1) {
+      solveDistance(nodes[i], nodes[i + 1], restLength);
+    }
 
     // Mild stabilizer against abrupt global stretch when controls are changed.
-    for (let i = 0; i < nodes.length - 1; i += 8) {
-      const j = Math.min(nodes.length - 1, i + 8);
-      solveDistance(nodes[i], nodes[j], baseLength * (j - i));
+    const longRangeStep = Math.max(6, Math.floor(segmentCount / 18));
+    const longRangeStiffness = 0.05;
+    for (let i = 0; i < nodes.length - 1; i += longRangeStep) {
+      const j = Math.min(nodes.length - 1, i + longRangeStep);
+      solveDistance(nodes[i], nodes[j], baseLength * (j - i), longRangeStiffness);
     }
   }
 }

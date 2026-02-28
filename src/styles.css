@@ -25,7 +25,7 @@ body,
 }
 
 .topbar {
-  height: 48px;
+  height: 74px;
   border-bottom: 1px solid var(--panel-border);
   display: flex;
   align-items: center;
@@ -47,13 +47,14 @@ body,
 
 .toolbar button,
 .toolbar select {
-  background: #1a2332;
-  border: 1px solid #2f3f59;
-  color: var(--text);
+  background: #223248;
+  border: 1px solid #40587d;
+  color: #f3f7ff;
   border-radius: 6px;
   height: 28px;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .toolbar button {
@@ -65,21 +66,113 @@ body,
   flex: 0 0 auto;
 }
 
+#widgetsHost {
+  position: fixed;
+  top: 122px;
+  right: 10px;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: 360px 360px;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.widgets-column {
+  pointer-events: auto;
+}
+
+.widgets-column .lil-gui {
+  position: static;
+  width: 100% !important;
+  max-height: calc(100vh - 110px);
+  overflow: auto;
+  font-size: 16px;
+  --widget-height: 30px;
+  --name-width: 54%;
+  --input-font-size: 15px;
+}
+
+.widgets-column .lil-gui .title {
+  font-size: 18px;
+  font-weight: 800;
+  color: #f6f9ff;
+  background: linear-gradient(90deg, #2a3c58, #24344d);
+  border-bottom: 1px solid #3f5780;
+}
+
+.widgets-column .lil-gui .name {
+  text-transform: none;
+  color: #e9f0ff;
+  font-weight: 700;
+}
+
 .title {
-  font-weight: 600;
-  letter-spacing: 0.4px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  font-size: 20px;
+  color: #f4f8ff;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
 }
 
 .stats {
   display: flex;
   gap: 14px;
-  color: var(--muted);
-  font-size: 13px;
+  color: #bed0ec;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.statusBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.simButtons {
+  display: flex;
+  gap: 6px;
+}
+
+.simButtons button {
+  height: 24px;
+  border: 1px solid #30425f;
+  background: #223248;
+  color: #f3f7ff;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0 8px;
+  cursor: pointer;
+}
+
+.title i,
+.simButtons i,
+.toolbar i {
+  margin-right: 6px;
+}
+
+.widgets-column .lil-gui .title i,
+.widgets-column .lil-gui .name i {
+  width: 14px;
+  text-align: center;
+  margin-right: 8px;
+}
+
+.widgets-column .lil-gui input,
+.widgets-column .lil-gui select,
+.widgets-column .lil-gui button {
+  color: #f3f7ff;
+  font-weight: 700;
+}
+
+.widgets-column .lil-gui button {
+  background: #23354d;
 }
 
 #layout {
   width: 100%;
-  height: calc(100% - 48px - 42px - 180px);
+  height: calc(100% - 74px - 42px - 180px);
   display: grid;
   gap: 8px;
   padding: 8px;
