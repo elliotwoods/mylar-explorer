@@ -6,7 +6,8 @@ function makeLineSegments(color, opacity) {
     color,
     transparent: opacity < 1,
     opacity,
-    depthWrite: false
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
   });
   return new THREE.LineSegments(geom, mat);
 }

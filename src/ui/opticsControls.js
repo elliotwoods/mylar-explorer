@@ -6,7 +6,14 @@ export function createOpticsControls(gui, params, hooks, statsModel) {
   optics.add(params.optics, "sourceZ", -8, 8, 0.01).onFinishChange(hooks.onOpticsRebuild);
   optics.add(params.optics, "sampleCountU", 2, 90, 1).onFinishChange(hooks.onOpticsRebuild);
   optics.add(params.optics, "sampleCountV", 2, 140, 1).onFinishChange(hooks.onOpticsRebuild);
+  optics.add(params.optics, "randomizeWithinCell").name("random in cell").onFinishChange(hooks.onOpticsRebuild);
+  optics.add(params.optics, "randomJitterAmount", 0, 1, 0.01).name("random amount").onFinishChange(hooks.onOpticsRebuild);
+  optics.add(params.optics, "randomSeed", 1, 999999, 1).name("random seed").onFinishChange(hooks.onOpticsRebuild);
   optics.add(params.optics, "reflectedLength", 0.2, 20, 0.1);
+  optics.add(params.optics, "missLength", 0.2, 40, 0.1).name("max miss distance");
+  optics.add(params.optics, "missToFloorEnabled").name("miss rays to floor");
+  optics.add(params.optics, "floorY", -20, 2, 0.05).name("floor y");
+  optics.add(params.optics, "fastIntersectionEnabled").name("fast intersections");
   optics.add(params.optics, "incidentVisible");
   optics.add(params.optics, "reflectedVisible");
   optics.add(params.optics, "missVisible");

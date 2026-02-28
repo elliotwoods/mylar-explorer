@@ -22,7 +22,11 @@ export const defaultParams = {
     startupRampDuration: 1.5,
     jerkyEnabled: false,
     jerkiness: 0.45,
-    jerkHarmonic: 4
+    jerkHarmonic: 4,
+    motorTorquePerMotorNm: 8,
+    motorTorqueAvailableNm: 16,
+    motorBandwidthHz: 4,
+    motorDampingRatio: 1.0
   },
   physics: {
     gravity: 9.81,
@@ -45,9 +49,9 @@ export const defaultParams = {
     showGraphs: true,
     showNodeMarkers: true,
     viewMode: "split",
-    envIntensity: 1,
-    roughness: 0.18,
-    metalness: 0.95,
+    envIntensity: 2.2,
+    roughness: 0.02,
+    metalness: 1,
     hdriEnabled: true,
     fallbackEnvironmentEnabled: true
   },

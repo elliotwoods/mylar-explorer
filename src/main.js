@@ -9,6 +9,7 @@ import { create3DScene } from "./render3d/scene3d.js";
 import { createControls } from "./ui/controls.js";
 import { createPlots } from "./ui/plots.js";
 import { logOpticsState } from "./render3d/spotlightDebug.js";
+import { createToolbar } from "./ui/toolbar.js";
 
 const params = cloneParams();
 const model = new SimulationModel(params);
@@ -18,6 +19,7 @@ runOpticsMathSelfTest();
 const canvas2d = document.getElementById("view2d");
 const canvas3d = document.getElementById("view3d");
 const plotsCanvas = document.getElementById("plotsCanvas");
+const toolbarEl = document.getElementById("toolbar");
 const layout = document.getElementById("layout");
 const fpsLabel = document.getElementById("fpsLabel");
 const stepLabel = document.getElementById("stepLabel");
@@ -46,7 +48,7 @@ function syncOpticsStats() {
 function rebuildBeam() {
   rebuildRestBeam(params, opticsState);
   scene3d.syncState(model.state);
-  updateOptics(params, opticsState, scene3d.getSheetMesh());
+  updateOptics(params, opticsState, scene3d.getSheetMesh(), { force: true });
   syncOpticsStats();
 }
 
@@ -87,7 +89,43 @@ const hooks = {
   opticsStats
 };
 
-createControls(params, hooks);
+const controls = createControls(params, hooks);
+
+function applyParamSnapshot(snapshot) {
+  if (!snapshot) return;
+  if (snapshot.geometry) Object.assign(params.geometry, snapshot.geometry);
+  if (snapshot.drive) Object.assign(params.drive, snapshot.drive);
+  if (snapshot.physics) Object.assign(params.physics, snapshot.physics);
+  if (snapshot.display) Object.assign(params.display, snapshot.display);
+  if (snapshot.scan) Object.assign(params.scan, snapshot.scan);
+  if (snapshot.optics) Object.assign(params.optics, snapshot.optics);
+
+  hardResetSimulation();
+  scene3d.updateMaterialParams();
+  scene3d.updateOpticsStyle();
+  void scene3d.refreshEnvironment();
+  updateDisplayLayout();
+}
+
+createToolbar({
+  mount: toolbarEl,
+  getSnapshot: () => ({
+    geometry: structuredClone(params.geometry),
+    drive: structuredClone(params.drive),
+    physics: structuredClone(params.physics),
+    display: structuredClone(params.display),
+    scan: structuredClone(params.scan),
+    optics: structuredClone(params.optics),
+    cameraPose: scene3d.getCameraPose()
+  }),
+  applySnapshot: (snapshot) => {
+    applyParamSnapshot(snapshot);
+    if (snapshot.cameraPose) scene3d.setCameraPose(snapshot.cameraPose);
+  },
+  getCameraPose: () => scene3d.getCameraPose(),
+  setCameraPose: (pose) => scene3d.setCameraPose(pose),
+  refreshGui: () => controls.refresh()
+});
 
 window.mylarDebug = {
   environment: () => scene3d.getEnvironmentDiagnostics(),

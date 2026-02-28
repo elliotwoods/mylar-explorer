@@ -1,5 +1,4 @@
 import GUI from "lil-gui";
-import { presets } from "../simulation/params.js";
 import { createOpticsControls } from "./opticsControls.js";
 
 export function createControls(params, hooks) {
@@ -67,21 +66,12 @@ export function createControls(params, hooks) {
   scan.add(params.scan, "dwellSeconds", 1, 15, 0.5);
   scan.add(hooks, "startScan").name("sweep + log");
 
-  const presetObj = {
-    preset: "Gentle swing",
-    applyPreset: () => {
-      const fn = presets[presetObj.preset];
-      if (fn) fn(params);
-      gui.controllersRecursive().forEach((c) => c.updateDisplay());
-      hooks.onMajorReset();
-      hooks.onMaterialChange();
-    }
-  };
-  const presetFolder = gui.addFolder("Presets");
-  presetFolder.add(presetObj, "preset", Object.keys(presets));
-  presetFolder.add(presetObj, "applyPreset");
-
   createOpticsControls(gui, params, hooks, hooks.opticsStats);
 
-  return { gui };
+  return {
+    gui,
+    refresh() {
+      gui.controllersRecursive().forEach((c) => c.updateDisplay());
+    }
+  };
 }

@@ -10,6 +10,9 @@ const _normalMatrix = new THREE.Matrix3();
 const _incoming = new THREE.Vector3();
 const _point = new THREE.Vector3();
 const _ref = new THREE.Vector3();
+const _world = new THREE.Vector3();
+const _sheetPoint = new THREE.Vector3();
+const _sheetNormal = new THREE.Vector3();
 
 function sourceFromParams(params) {
   return new THREE.Vector3(
@@ -57,7 +60,86 @@ function pushPoint(arr, p) {
   arr.push(p.x, p.y, p.z);
 }
 
-export function updateOptics(params, opticsState, targetMesh) {
+function missEndpoint(origin, dir, params) {
+  const maxDist = Math.max(0.05, params.optics.missLength);
+  let t = maxDist;
+
+  if (params.optics.missToFloorEnabled) {
+    const eps = 1e-7;
+    if (Math.abs(dir.y) > eps) {
+      const floorT = (params.optics.floorY - origin.y) / dir.y;
+      if (floorT > 0) t = Math.min(maxDist, floorT);
+    }
+  }
+
+  return origin.clone().addScaledVector(dir, t);
+}
+
+function buildFastProfile(targetMesh, params) {
+  const rows = Math.max(2, Math.floor(params.geometry.segments) + 1);
+  const pos = targetMesh.geometry?.attributes?.position;
+  if (!pos || pos.count < rows) return null;
+  const cols = Math.max(2, Math.floor(pos.count / rows));
+  const midCol = Math.floor(cols * 0.5);
+  const profile = [];
+
+  for (let row = 0; row < rows; row += 1) {
+    const idx = row * cols + midCol;
+    _world.fromBufferAttribute(pos, idx).applyMatrix4(targetMesh.matrixWorld);
+    profile.push({ y: _world.y, z: _world.z });
+  }
+  return profile;
+}
+
+function fastIntersectStrip(origin, dir, halfWidth, profile) {
+  const eps = 1e-7;
+  let bestT = Infinity;
+  let bestRow = -1;
+  let hit = false;
+
+  for (let row = 0; row < profile.length - 1; row += 1) {
+    const y0 = profile[row].y;
+    const z0 = profile[row].z;
+    const y1 = profile[row + 1].y;
+    const z1 = profile[row + 1].z;
+    const dySeg = y1 - y0;
+    const dzSeg = z1 - z0;
+    if (Math.abs(dySeg) < eps) continue;
+
+    const k = dzSeg / dySeg;
+    const denom = dir.z - k * dir.y;
+    if (Math.abs(denom) < eps) continue;
+
+    const t = (z0 + k * (origin.y - y0) - origin.z) / denom;
+    if (t <= 1e-6 || t >= bestT) continue;
+
+    const yHit = origin.y + t * dir.y;
+    const yMin = Math.min(y0, y1) - 1e-6;
+    const yMax = Math.max(y0, y1) + 1e-6;
+    if (yHit < yMin || yHit > yMax) continue;
+
+    const xHit = origin.x + t * dir.x;
+    if (Math.abs(xHit) > halfWidth + 1e-6) continue;
+
+    bestT = t;
+    bestRow = row;
+    hit = true;
+  }
+
+  if (!hit) return null;
+  _sheetPoint.copy(origin).addScaledVector(dir, bestT);
+  const dy = profile[bestRow + 1].y - profile[bestRow].y;
+  const dz = profile[bestRow + 1].z - profile[bestRow].z;
+  _sheetNormal.set(0, -dz, dy).normalize();
+  return {
+    point: _sheetPoint.clone(),
+    normal: _sheetNormal.clone(),
+    distance: bestT
+  };
+}
+
+export function updateOptics(params, opticsState, targetMesh, options = {}) {
+  const force = !!options.force;
   if (!params.optics.enabled || !targetMesh) {
     const runtime = opticsState.runtime;
     runtime.hitCount = 0;
@@ -75,7 +157,7 @@ export function updateOptics(params, opticsState, targetMesh) {
     };
     return;
   }
-  if (params.optics.freeze && opticsState.runtime.totalRays > 0) return;
+  if (!force && params.optics.freeze && opticsState.runtime.totalRays > 0) return;
 
   const source = sourceFromParams(params);
   const rays = opticsState.rays;
@@ -83,7 +165,9 @@ export function updateOptics(params, opticsState, targetMesh) {
   if (!totalRays) return;
 
   const traceStride = Math.max(1, Math.ceil(totalRays / Math.max(1, params.optics.maxTracedRays)));
-  const drawStride = Math.max(1, Math.ceil(totalRays / Math.max(1, params.optics.maxRenderedRays)));
+  const estimatedTracedRays = Math.ceil(totalRays / traceStride);
+  // Draw decimation should operate on the traced-ray set, not full grid index space.
+  const drawStride = Math.max(1, Math.ceil(estimatedTracedRays / Math.max(1, params.optics.maxRenderedRays)));
   const inc = [];
   const refl = [];
   const miss = [];
@@ -98,18 +182,25 @@ export function updateOptics(params, opticsState, targetMesh) {
   let hitCount = 0;
   let missCount = 0;
   let tracedCount = 0;
+  let tracedOrdinal = 0;
   const doRestPreview = params.optics.restStatePreview;
 
   targetMesh.updateMatrixWorld(true);
+  const useFast = params.optics.fastIntersectionEnabled && !doRestPreview;
+  const fastProfile = useFast ? buildFastProfile(targetMesh, params) : null;
+  const halfW = params.geometry.sheetWidth * 0.5;
   for (let idx = 0; idx < totalRays; idx += traceStride) {
     const ray = rays[idx];
     const origin = source;
     const dir = ray.direction;
     tracedCount += 1;
+    tracedOrdinal += 1;
 
     let hit = null;
     if (doRestPreview) {
       hit = intersectRestPlaneRect(origin, dir, params);
+    } else if (fastProfile) {
+      hit = fastIntersectStrip(origin, dir, halfW, fastProfile);
     } else {
       _raycaster.set(origin, dir);
       _raycaster.firstHitOnly = true;
@@ -124,7 +215,7 @@ export function updateOptics(params, opticsState, targetMesh) {
       }
     }
 
-    const inDrawSet = idx % drawStride === 0;
+    const inDrawSet = tracedOrdinal % drawStride === 0;
     const for2D = !params.optics.centerSliceOnlyIn2D || ray.isCenterSlice;
 
     if (hit) {
@@ -152,7 +243,7 @@ export function updateOptics(params, opticsState, targetMesh) {
       }
     } else {
       missCount += 1;
-      _vB.copy(origin).addScaledVector(dir, params.optics.missLength);
+      _vB.copy(missEndpoint(origin, dir, params));
       if (inDrawSet) pushSeg(miss, origin, _vB);
       if (for2D) {
         overlay.misses.push({

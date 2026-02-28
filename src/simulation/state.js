@@ -36,7 +36,12 @@ export function createInitialState(params) {
       thetaDDot: 0,
       ramp: 0,
       prevTheta: 0,
-      prevThetaDot: 0
+      prevThetaDot: 0,
+      targetTheta: 0,
+      prevTargetTheta: 0,
+      prevTargetThetaDot: 0,
+      motorTorqueCmd: 0,
+      motorTorqueApplied: 0
     },
     lowerWeight: {
       x: 0,

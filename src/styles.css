@@ -34,6 +34,37 @@ body,
   background: rgba(17, 24, 36, 0.75);
 }
 
+.toolbar {
+  height: 42px;
+  border-bottom: 1px solid var(--panel-border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  overflow-x: auto;
+  background: rgba(16, 22, 32, 0.85);
+}
+
+.toolbar button,
+.toolbar select {
+  background: #1a2332;
+  border: 1px solid #2f3f59;
+  color: var(--text);
+  border-radius: 6px;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.toolbar button {
+  cursor: pointer;
+}
+
+.toolbar .spacer {
+  width: 10px;
+  flex: 0 0 auto;
+}
+
 .title {
   font-weight: 600;
   letter-spacing: 0.4px;
@@ -48,7 +79,7 @@ body,
 
 #layout {
   width: 100%;
-  height: calc(100% - 48px - 180px);
+  height: calc(100% - 48px - 42px - 180px);
   display: grid;
   gap: 8px;
   padding: 8px;
