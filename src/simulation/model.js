@@ -47,12 +47,27 @@ export class SimulationModel {
   }
 
   startFrequencyScan() {
+    const fMin = this.params.scan.fMin;
+    const fMax = this.params.scan.fMax;
+    const stepHz = this.params.scan.stepHz || 0.1;
+    const totalSteps = Math.max(1, Math.floor((fMax - fMin) / stepHz) + 1);
+
+    this.params.drive.frequencyHz = fMin;
+    this.reset();
+
+    // Set scan state AFTER reset (reset replaces this.state entirely)
     this.state.scan.running = true;
-    this.state.scan.currentFreq = this.params.scan.fMin;
+    this.state.scan.currentFreq = fMin;
     this.state.scan.elapsedAtFreq = 0;
     this.state.scan.data = [];
-    this.params.drive.frequencyHz = this.state.scan.currentFreq;
-    this.reset();
+    this.state.scan.phase = "settling";
+    this.state.scan.stepIndex = 0;
+    this.state.scan.totalSteps = totalSteps;
+  }
+
+  stopFrequencyScan() {
+    this.state.scan.running = false;
+    this.state.scan.phase = "cancelled";
   }
 
   step(dt) {
@@ -88,9 +103,17 @@ export class SimulationModel {
     if (!scan.running) return;
 
     scan.elapsedAtFreq += dt;
+
+    if (scan.elapsedAtFreq < this.params.scan.settleSeconds) {
+      scan.phase = "settling";
+      return;
+    }
+    scan.phase = "measuring";
+
     const total = this.params.scan.settleSeconds + this.params.scan.dwellSeconds;
     if (scan.elapsedAtFreq < total) return;
 
+    // Record measurement for this frequency
     scan.data.push({
       f: scan.currentFreq,
       ampMid: this.state.metrics.responseAmplitudeMid,
@@ -98,19 +121,33 @@ export class SimulationModel {
       ampWeight: this.state.metrics.responseAmplitudeWeight
     });
 
-    const stepHz = 0.1;
-    scan.currentFreq += stepHz;
-    if (scan.currentFreq > this.params.scan.fMax + 1e-6) {
+    scan.stepIndex += 1;
+
+    // Advance to next frequency
+    const stepHz = this.params.scan.stepHz || 0.1;
+    const nextFreq = scan.currentFreq + stepHz;
+    if (nextFreq > this.params.scan.fMax + 1e-6) {
       scan.running = false;
+      scan.phase = "complete";
       return;
     }
 
-    this.params.drive.frequencyHz = scan.currentFreq;
-    scan.elapsedAtFreq = 0;
+    // Save scan state before reset wipes it
+    const savedData = scan.data;
+    const savedStepIndex = scan.stepIndex;
+    const savedTotalSteps = scan.totalSteps;
+
+    this.params.drive.frequencyHz = nextFreq;
     this.reset();
+
+    // Restore on new state
     this.state.scan.running = true;
-    this.state.scan.currentFreq = scan.currentFreq;
-    this.state.scan.data = scan.data;
+    this.state.scan.currentFreq = nextFreq;
+    this.state.scan.elapsedAtFreq = 0;
+    this.state.scan.data = savedData;
+    this.state.scan.phase = "settling";
+    this.state.scan.stepIndex = savedStepIndex;
+    this.state.scan.totalSteps = savedTotalSteps;
   }
 
   updateMetrics(dt) {

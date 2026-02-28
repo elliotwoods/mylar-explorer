@@ -1,8 +1,11 @@
+import { sheetMassFromThickness } from "./material.js";
+
 export function createInitialState(params) {
   const segments = Math.max(8, Math.floor(params.geometry.segments));
   const nodeCount = segments + 1;
   const segmentLength = params.geometry.sheetHeight / segments;
-  const sheetNodeMass = params.geometry.sheetMassTotal / nodeCount;
+  const sheetMassTotal = sheetMassFromThickness(params);
+  const sheetNodeMass = sheetMassTotal / nodeCount;
 
   const nodes = [];
   for (let i = 0; i < nodeCount; i += 1) {
@@ -74,7 +77,10 @@ export function createInitialState(params) {
       running: false,
       currentFreq: 0,
       elapsedAtFreq: 0,
-      data: []
+      data: [],
+      phase: "idle",
+      stepIndex: 0,
+      totalSteps: 0
     }
   };
 }

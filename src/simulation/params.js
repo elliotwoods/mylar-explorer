@@ -5,7 +5,7 @@ export const defaultParams = {
     sheetHeight: 6,
     sheetWidth: 1.2,
     segments: 256,
-    sheetMassTotal: 1.4,
+    sheetThicknessMm: 0.051,
     topBattenMass: 5,
     topBattenDiameter: 0.05,
     bottomBattenMass: 4,
@@ -64,6 +64,7 @@ export const defaultParams = {
     active: false,
     fMin: 0.1,
     fMax: 3,
+    stepHz: 0.1,
     dwellSeconds: 5,
     settleSeconds: 2
   },

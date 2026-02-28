@@ -1,5 +1,6 @@
 import GUI from "lil-gui";
 import { createOpticsControls } from "./opticsControls.js";
+import { sheetMassFromThickness, flexuralRigidity, PET_DENSITY, PET_YOUNGS_MODULUS } from "../simulation/material.js";
 
 function withIcon(text, iconClass) {
   return iconClass ? `<i class="fa-solid ${iconClass}"></i> ${text}` : text;
@@ -41,7 +42,11 @@ export function createControls(params, hooks, mounts) {
   const geom = iconizeFolder(leftGui.addFolder("Geometry & Masses"), "fa-ruler-combined");
   add(geom, params.geometry, "sheetHeight", "Sheet Height (m)", "Vertical sheet length.", 2, 10, 0.1, "fa-arrow-up-long").onFinishChange(hooks.onMajorReset);
   add(geom, params.geometry, "sheetWidth", "Sheet Width (m)", "Sheet width used for optics/drag/3D strip.", 0.2, 2.5, 0.01, "fa-arrows-left-right").onFinishChange(hooks.onGeometryChange);
-  add(geom, params.geometry, "sheetMassTotal", "Sheet Total Mass (kg)", "Total mass distributed along sheet nodes.", 0.2, 8, 0.01, "fa-weight-hanging").onFinishChange(hooks.onMajorReset);
+  add(geom, params.geometry, "sheetThicknessMm", "Sheet Thickness (mm)", "Mylar film thickness. Standard farming mylar is 0.051 mm (2 mil).", 0.01, 1.0, 0.001, "fa-layer-group").onFinishChange(hooks.onMajorReset);
+  const massInfo = { derivedMass: sheetMassFromThickness(params).toFixed(3) + " kg" };
+  const massDisplay = geom.add(massInfo, "derivedMass").name("Sheet Mass (derived)").disable();
+  massDisplay.domElement.title = `Computed from PET density (${PET_DENSITY} kg/m³) × thickness × area.`;
+  iconizeController(massDisplay, "fa-weight-hanging");
   add(geom, params.geometry, "segments", "Segment Count", "Number of chain segments along sheet height.", 20, 400, 1, "fa-grip-lines").onFinishChange(hooks.onMajorReset);
   add(geom, params.geometry, "topBattenMass", "Top Batten Mass (kg)", "Mass lumped at upper sheet node.", 0.5, 15, 0.1).onFinishChange(hooks.onMajorReset);
   add(geom, params.geometry, "topBattenDiameter", "Top Batten Diameter (m)", "Visual/drag diameter of top batten.", 0.01, 0.2, 0.005).onFinishChange(hooks.onGeometryChange);
@@ -78,6 +83,7 @@ export function createControls(params, hooks, mounts) {
   const scan = iconizeFolder(leftGui.addFolder("Frequency Response Scan"), "fa-chart-line");
   add(scan, params.scan, "fMin", "Min Frequency (Hz)", "Scan start frequency.", 0.05, 3, 0.05);
   add(scan, params.scan, "fMax", "Max Frequency (Hz)", "Scan end frequency.", 0.2, 5, 0.05);
+  add(scan, params.scan, "stepHz", "Step Size (Hz)", "Frequency increment per step.", 0.01, 0.5, 0.01);
   add(scan, params.scan, "settleSeconds", "Settle Time (s)", "Discard transient time at each frequency.", 0, 10, 0.5);
   add(scan, params.scan, "dwellSeconds", "Measure Time (s)", "Measurement time at each frequency.", 1, 15, 0.5);
   const scanBtn = scan.add(hooks, "startScan").name("Start Sweep");
@@ -107,8 +113,25 @@ export function createControls(params, hooks, mounts) {
     guiLeft: leftGui,
     guiRight: rightGui,
     refresh() {
+      massInfo.derivedMass = sheetMassFromThickness(params).toFixed(3) + " kg";
       leftGui.controllersRecursive().forEach((c) => c.updateDisplay());
       rightGui.controllersRecursive().forEach((c) => c.updateDisplay());
+    },
+    collapseRightPanels() {
+      const openState = [];
+      for (const folder of rightGui.foldersRecursive()) {
+        openState.push({ folder, wasOpen: !folder._closed });
+        folder.close();
+      }
+      rightGui.close();
+      return openState;
+    },
+    restoreRightPanels(saved) {
+      rightGui.open();
+      for (const { folder, wasOpen } of saved) {
+        if (wasOpen) folder.open();
+        else folder.close();
+      }
     }
   };
 }

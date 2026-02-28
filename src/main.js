@@ -8,6 +8,7 @@ import { create2DRenderer } from "./render2d/render2d.js";
 import { create3DScene } from "./render3d/scene3d.js";
 import { createControls } from "./ui/controls.js";
 import { createPlots } from "./ui/plots.js";
+import { createSweepPanel } from "./ui/sweepPanel.js";
 import { logOpticsState } from "./render3d/spotlightDebug.js";
 import { createToolbar } from "./ui/toolbar.js";
 
@@ -86,7 +87,8 @@ const hooks = {
     syncOpticsStats();
   },
   resetCamera: () => scene3d.resetCamera(),
-  startScan: () => model.startFrequencyScan(),
+  startScan: () => startSweep(),
+  stopScan: () => stopSweep(),
   onMajorReset: () => {
     hardResetSimulation();
   },
@@ -110,6 +112,39 @@ const hooks = {
 };
 
 const controls = createControls(params, hooks, { left: widgetsLeftEl, right: widgetsRightEl });
+const sweepPanel = createSweepPanel(widgetsRightEl);
+
+let savedRightPanelState = null;
+let savedFrequency = null;
+
+function startSweep() {
+  savedFrequency = params.drive.frequencyHz;
+  savedRightPanelState = controls.collapseRightPanels();
+  sweepPanel.show({
+    onCancel: () => stopSweep(),
+    onDismiss: () => dismissSweep()
+  });
+  model.startFrequencyScan();
+}
+
+function stopSweep() {
+  model.stopFrequencyScan();
+  // Let the panel show cancelled state; user clicks Done to dismiss
+}
+
+function dismissSweep() {
+  sweepPanel.hide();
+  model.state.scan.phase = "idle";
+  if (savedRightPanelState) {
+    controls.restoreRightPanels(savedRightPanelState);
+    savedRightPanelState = null;
+  }
+  if (savedFrequency != null) {
+    params.drive.frequencyHz = savedFrequency;
+    savedFrequency = null;
+  }
+  controls.refresh();
+}
 
 function applyParamSnapshot(snapshot) {
   if (!snapshot) return;
@@ -216,6 +251,13 @@ function frame(now) {
   scene3d.update(null, opticsState);
   scene3d.updateOpticsStyle();
   if (params.display.showGraphs) plots.draw(model.state);
+
+  // Update sweep panel
+  const scan = model.state.scan;
+  if (scan.running || scan.phase === "complete" || scan.phase === "cancelled") {
+    sweepPanel.update(scan, params);
+    controls.refresh();
+  }
 
   fpsFrames += 1;
   fpsClock += frameDt;
