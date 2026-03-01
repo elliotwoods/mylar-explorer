@@ -1,4 +1,20 @@
-import * as THREE from "three";
+import * as THREE from "three/webgpu";
+import {
+  Fn, If,
+  uniform, float, int, vec3, vec4,
+  uv, texture3D, clamp
+} from "three/tsl";
+
+function createPlaceholder3DTexture() {
+  const data = new Float32Array(1);
+  const tex = new THREE.Data3DTexture(data, 1, 1, 1);
+  tex.format = THREE.RedFormat;
+  tex.type = THREE.FloatType;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  return tex;
+}
 
 function axisToInt(axis) {
   if (axis === "xy") return 0;
@@ -7,48 +23,47 @@ function axisToInt(axis) {
 }
 
 function makeSliceMaterial() {
-  return new THREE.ShaderMaterial({
-    glslVersion: THREE.GLSL3,
-    transparent: true,
-    depthWrite: false,
-    depthTest: true,
-    blending: THREE.AdditiveBlending,
-    uniforms: {
-      uVolumeTexture: { value: null },
-      uAxis: { value: 1 },
-      uSlice: { value: 0.5 },
-      uOpacity: { value: 0.85 }
-    },
-    vertexShader: /* glsl */ `
-      out vec2 vUv;
-      void main() {
-        vUv = uv;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      precision highp float;
-      precision highp sampler3D;
-      in vec2 vUv;
-      out vec4 outColor;
+  const uAxis = uniform(1);
+  const uSlice = uniform(0.5);
+  const uOpacity = uniform(0.85);
+  const placeholder = createPlaceholder3DTexture();
 
-      uniform sampler3D uVolumeTexture;
-      uniform int uAxis;
-      uniform float uSlice;
-      uniform float uOpacity;
+  // Capture the texture3D node created inside Fn so we can update its .value later
+  let volumeTexNode = null;
 
-      void main() {
-        vec3 uvw = vec3(vUv.x, uSlice, vUv.y);
-        if (uAxis == 0) uvw = vec3(vUv.x, vUv.y, uSlice);
-        else if (uAxis == 2) uvw = vec3(uSlice, vUv.x, vUv.y);
+  const sliceColorFn = Fn(() => {
+    const _uv = uv();
 
-        float e = texture(uVolumeTexture, clamp(uvw, 0.0, 1.0)).r;
-        vec3 c = vec3(e * 4.0, e * 1.8, e * 0.65);
-        float a = clamp(e * uOpacity * 2.0, 0.0, 0.95);
-        outColor = vec4(c, a);
-      }
-    `
+    // Default: xz (axis=1) -> uvw = (u, slice, v)
+    const uvw = vec3(_uv.x, uSlice, _uv.y).toVar();
+
+    // axis=0 (xy) -> uvw = (u, v, slice)
+    If(uAxis.equal(int(0)), () => {
+      uvw.assign(vec3(_uv.x, _uv.y, uSlice));
+    });
+
+    // axis=2 (yz) -> uvw = (slice, u, v)
+    If(uAxis.equal(int(2)), () => {
+      uvw.assign(vec3(uSlice, _uv.x, _uv.y));
+    });
+
+    const sampleNode = texture3D(placeholder, clamp(uvw, float(0.0), float(1.0)));
+    volumeTexNode = sampleNode;
+    const e = sampleNode.r;
+
+    const c = vec3(e.mul(4.0), e.mul(1.8), e.mul(0.65));
+    const a = clamp(e.mul(uOpacity).mul(2.0), float(0.0), float(0.95));
+    return vec4(c, a);
   });
+
+  const material = new THREE.MeshBasicNodeMaterial();
+  material.transparent = true;
+  material.depthWrite = false;
+  material.depthTest = true;
+  material.blending = THREE.AdditiveBlending;
+  material.fragmentNode = sliceColorFn();
+
+  return { material, uAxis, uSlice, uOpacity, volumeTexNode: { get node() { return volumeTexNode; } } };
 }
 
 export function createVolumetricDebug(scene) {
@@ -57,7 +72,8 @@ export function createVolumetricDebug(scene) {
   boundsHelper.visible = false;
   scene.add(boundsHelper);
 
-  const sliceMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), makeSliceMaterial());
+  const sliceState = makeSliceMaterial();
+  const sliceMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), sliceState.material);
   sliceMesh.visible = false;
   scene.add(sliceMesh);
 
@@ -98,11 +114,13 @@ export function createVolumetricDebug(scene) {
       sliceMesh.rotation.x = -Math.PI * 0.5;
     }
 
-    const uniforms = sliceMesh.material.uniforms;
-    uniforms.uVolumeTexture.value = volumeTexture;
-    uniforms.uAxis.value = axisToInt(axis);
-    uniforms.uSlice.value = slicePosition;
-    uniforms.uOpacity.value = opacity;
+    const texNode = sliceState.volumeTexNode.node;
+    if (texNode && volumeTexture) {
+      texNode.value = volumeTexture;
+    }
+    sliceState.uAxis.value = axisToInt(axis);
+    sliceState.uSlice.value = slicePosition;
+    sliceState.uOpacity.value = opacity;
   }
 
   function dispose() {

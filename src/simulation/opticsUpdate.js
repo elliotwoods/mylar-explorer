@@ -1,4 +1,4 @@
-import * as THREE from "three";
+import * as THREE from "three/webgpu";
 import { orientNormalAgainstIncoming, reflectDirection } from "./opticsMath.js";
 
 const _raycaster = new THREE.Raycaster();

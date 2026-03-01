@@ -1,4 +1,4 @@
-import * as THREE from "three";
+import * as THREE from "three/webgpu";
 
 export function reflectDirection(incomingDir, surfaceNormal) {
   // r = d - 2 * dot(d, n) * n

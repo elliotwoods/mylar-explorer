@@ -1,7 +1,19 @@
 {
   "permissions": {
     "allow": [
-      "WebSearch"
+      "WebSearch",
+      "WebFetch(domain:blog.maximeheckel.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:discourse.threejs.org)",
+      "WebFetch(domain:tympanus.net)",
+      "WebFetch(domain:www.utsubo.com)",
+      "WebFetch(domain:sbcode.net)",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:niklever.com)",
+      "WebFetch(domain:threejsroadmap.com)",
+      "Bash(do sed:*)",
+      "Bash(npx vite:*)",
+      "Bash(rm:*)"
     ]
   }
 }

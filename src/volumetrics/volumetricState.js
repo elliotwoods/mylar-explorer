@@ -1,4 +1,4 @@
-import * as THREE from "three";
+import * as THREE from "three/webgpu";
 import { getVolumetricResolution } from "./volumetricBounds.js";
 import { createVolumeTexture, disposeVolumeTexture } from "./volumeTextures.js";
 
@@ -57,7 +57,10 @@ export function ensureVolumetricBuffers(state, params) {
 export function resetVolumetricHistory(state) {
   state.volumeData.fill(0);
   state.historyData.fill(0);
-  if (state.volumeTexture) state.volumeTexture.needsUpdate = true;
+  if (state.volumeTexture) {
+    state.volumeTexture.dispose();
+    state.volumeTexture.needsUpdate = true;
+  }
 }
 
 export function disposeVolumetricState(state) {

@@ -76,6 +76,7 @@ export const defaultParams = {
     metalness: 1,
     hdriEnabled: true,
     fallbackEnvironmentEnabled: true,
+    hdrOutputEnabled: true,
     toneMappingMode: "aces",
     toneMappingExposure: 1.25,
     backgroundColor: "#101720",

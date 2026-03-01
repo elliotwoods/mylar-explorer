@@ -271,6 +271,8 @@ export function createControls(params, hooks, mounts) {
     add(gui, params.display, "hdriEnabled", "HDRI Enabled", "Use HDR environment map if available.");
     add(gui, params.display, "fallbackEnvironmentEnabled", "Fallback Environment", "Use RoomEnvironment when HDRI unavailable.").onChange(hooks.onEnvironmentChange);
 
+    add(gui, params.display, "hdrOutputEnabled", "HDR Output", "Enable extended-range output on HDR displays (requires WebGPU + HDR monitor).").onChange(hooks.onHdrOutputChange);
+
     const tone = iconizeFolder(gui.addFolder("Tone Mapping"), "fa-sun");
     const toneMode = tone.add(params.display, "toneMappingMode", {
       ACES: "aces",

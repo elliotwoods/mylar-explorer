@@ -37,7 +37,10 @@ const renderer2d = create2DRenderer(canvas2d, params);
 const plots = createPlots(plotsCanvas, params);
 
 const startupT0 = performance.now();
-const scene3d = create3DScene(canvas3d, params);
+
+// create3DScene is async (WebGPU init). Wrap all dependent code in an async IIFE.
+(async () => {
+const scene3d = await create3DScene(canvas3d, params);
 rebuildRestBeam(params, opticsState);
 
 const opticsStats = {
@@ -174,6 +177,11 @@ const hooks = {
     scene3d.updateMaterialParams();
   },
   onDisplayChange: () => updateDisplayLayout(),
+  onHdrOutputChange: () => {
+    // Save full state and reload — WebGPU renderer canvas format can't change at runtime
+    toolbar.saveLastSession();
+    location.reload();
+  },
   onVolumetricConfigChange: () => scene3d.invalidateVolumetrics(),
   rebuildBeam,
   logOptics: () => logOpticsState(opticsState),
@@ -233,7 +241,7 @@ function applyParamSnapshot(snapshot) {
   updateDisplayLayout();
 }
 
-createToolbar({
+const toolbar = createToolbar({
   mount: toolbarEl,
   getSnapshot: () => ({
     geometry: structuredClone(params.geometry),
@@ -354,3 +362,4 @@ function frame(now) {
 }
 
 requestAnimationFrame(frame);
+})();

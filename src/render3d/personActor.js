@@ -1,4 +1,4 @@
-import * as THREE from "three";
+import * as THREE from "three/webgpu";
 import { ColladaLoader } from "three/addons/loaders/ColladaLoader.js";
 
 const DEG2RAD = Math.PI / 180;

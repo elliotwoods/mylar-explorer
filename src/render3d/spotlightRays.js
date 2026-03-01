@@ -1,4 +1,4 @@
-import * as THREE from "three";
+import * as THREE from "three/webgpu";
 
 function makeLineSegments(color, opacity) {
   const geom = new THREE.BufferGeometry();

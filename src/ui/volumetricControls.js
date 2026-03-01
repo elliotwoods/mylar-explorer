@@ -100,7 +100,7 @@ export function createVolumetricControls(gui, params, hooks, statsModel) {
 
   const stats = folder.addFolder("Volumetric Stats");
   stats.add(statsModel, "enabled").name("Enabled").listen();
-  stats.add(statsModel, "webgl2Ready").name("WebGL2 Ready").listen();
+  stats.add(statsModel, "webgl2Ready").name("GPU Ready").listen();
   stats.add(statsModel, "validReflectedRays").name("Valid Reflected Rays").listen();
   stats.add(statsModel, "injectedRays").name("Injected Rays").listen();
   stats.add(statsModel, "averageHitFraction").name("Avg Hit Fraction").listen();

@@ -1,4 +1,4 @@
-import * as THREE from "three";
+import * as THREE from "three/webgpu";
 
 export function createVolumeTexture(data, resolution) {
   const texture = new THREE.Data3DTexture(data, resolution.x, resolution.y, resolution.z);

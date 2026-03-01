@@ -1,8 +1,6 @@
-import * as THREE from "three";
+import * as THREE from "three/webgpu";
+import { pass, texture, float, vec4, mix, uniform } from "three/tsl";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
-import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
-import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { createSheetMesh } from "./sheetMesh.js";
 import { createRigMeshes } from "./rigMeshes.js";
 import { createPersonActor } from "./personActor.js";
@@ -19,7 +17,7 @@ import {
   resetVolumetricHistory
 } from "../volumetrics/volumetricState.js";
 import { applyTemporalAccumulation } from "../volumetrics/temporalAccumulation.js";
-import { VolumetricPass } from "../volumetrics/volumetricPass.js";
+import { VolumetricRenderer } from "../volumetrics/volumetricPass.js";
 
 const _source = new THREE.Vector3();
 const _volumeCenter = new THREE.Vector3();
@@ -46,8 +44,24 @@ function getToneMappingConstant(mode) {
   }
 }
 
-export function create3DScene(canvas, params) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+function detectHDRSupport() {
+  if (typeof navigator === "undefined" || !navigator.gpu) return false;
+  if (typeof matchMedia === "function") {
+    return matchMedia("(dynamic-range: high)").matches;
+  }
+  return false;
+}
+
+async function createRendererPipeline(canvas, params, scene, camera, volumetricState) {
+  const hdrDisplay = params.display.hdrOutputEnabled && detectHDRSupport();
+
+  const renderer = new THREE.WebGPURenderer({
+    canvas,
+    antialias: true,
+    ...(hdrDisplay ? { outputType: THREE.HalfFloatType } : {})
+  });
+  await renderer.init();
+
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   _backgroundColor.set(params.display.backgroundColor ?? "#101720");
   _backgroundColor.multiplyScalar(Math.max(0, Math.min(1, params.display.backgroundIntensity ?? 1)));
@@ -55,9 +69,49 @@ export function create3DScene(canvas, params) {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
+  if (hdrDisplay) {
+    console.log("[render] HDR display detected — using extended-range output");
+  }
+  console.log("[render] WebGPU renderer initialized");
+
+  const env = setupEnvironment(renderer, scene, params);
+  const volumetricRenderer = new VolumetricRenderer(camera, params, volumetricState);
+
+  // Compositing uniforms controlling how scene and volumetric mix
+  const uShowScene = uniform(1.0);
+  const uShowVolumetric = uniform(1.0);
+  const uCompositeOpacity = uniform(0.75);
+
+  const postProcessing = new THREE.PostProcessing(renderer);
+  const scenePass = pass(scene, camera);
+  const sceneColor = scenePass.getTextureNode("output");
+  const volumetricTexNode = texture(volumetricRenderer.texture);
+
+  const composited = sceneColor.mul(uShowScene).add(
+    volumetricTexNode.mul(uCompositeOpacity).mul(uShowVolumetric)
+  );
+  postProcessing.outputNode = composited;
+
+  return {
+    renderer,
+    env,
+    volumetricRenderer,
+    postProcessing,
+    uShowScene,
+    uShowVolumetric,
+    uCompositeOpacity,
+    hdrActive: hdrDisplay,
+    dispose() {
+      env.dispose();
+      volumetricRenderer.dispose();
+      renderer.dispose();
+    }
+  };
+}
+
+export async function create3DScene(canvas, params) {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 80);
-  // Default view from opposite side of the mylar so reflected rays travel toward camera.
   const defaultCameraPose = {
     position: { x: -3.7, y: -2.2, z: -4.2 },
     target: { x: 0, y: -2.8, z: 0 }
@@ -88,27 +142,13 @@ export function create3DScene(canvas, params) {
   const person = createPersonActor(scene, params, { floorY: -6.4 });
   scene.add(sheet.mesh);
 
-  const env = setupEnvironment(renderer, scene, params);
   const spotlight = createSpotlightRays(scene, params);
 
-  const webgl2Ready = renderer.capabilities.isWebGL2;
-  if (!webgl2Ready) {
-    console.warn("[volumetrics] WebGL2 unavailable. Volumetric pass disabled.");
-  }
-
   const volumetricState = createVolumetricState(params);
-  volumetricState.stats.webgl2Ready = webgl2Ready;
   const volumetricDebug = createVolumetricDebug(scene);
 
-  const composer = new EffectComposer(renderer);
-  composer.setPixelRatio(renderer.getPixelRatio());
-  const renderPass = new RenderPass(scene, camera);
-  composer.addPass(renderPass);
-  const volumetricPass = new VolumetricPass(camera, params, volumetricState);
-  volumetricPass.enabled = webgl2Ready;
-  composer.addPass(volumetricPass);
-  const outputPass = new OutputPass();
-  composer.addPass(outputPass);
+  // --- Renderer pipeline (mutable — recreated when HDR setting changes) ---
+  const pipe = await createRendererPipeline(canvas, params, scene, camera, volumetricState);
 
   const toneMappingState = {
     mode: null,
@@ -123,8 +163,8 @@ export function create3DScene(canvas, params) {
     const backgroundColor = params.display.backgroundColor ?? "#101720";
     const backgroundIntensity = Math.max(0, Math.min(1, params.display.backgroundIntensity ?? 1));
     if (mode !== toneMappingState.mode || exposure !== toneMappingState.exposure) {
-      renderer.toneMapping = getToneMappingConstant(mode);
-      renderer.toneMappingExposure = exposure;
+      pipe.renderer.toneMapping = getToneMappingConstant(mode);
+      pipe.renderer.toneMappingExposure = exposure;
       toneMappingState.mode = mode;
       toneMappingState.exposure = exposure;
     }
@@ -134,7 +174,7 @@ export function create3DScene(canvas, params) {
     ) {
       _backgroundColor.set(backgroundColor);
       _backgroundColor.multiplyScalar(backgroundIntensity);
-      renderer.setClearColor(_backgroundColor);
+      pipe.renderer.setClearColor(_backgroundColor);
       toneMappingState.backgroundColor = backgroundColor;
       toneMappingState.backgroundIntensity = backgroundIntensity;
     }
@@ -155,11 +195,10 @@ export function create3DScene(canvas, params) {
   function resize() {
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
-    renderer.setSize(w, h, false);
-    composer.setPixelRatio(renderer.getPixelRatio());
-    composer.setSize(w, h);
+    pipe.renderer.setSize(w, h, false);
     camera.aspect = w / Math.max(1, h);
     camera.updateProjectionMatrix();
+    pipe.volumetricRenderer.setSize(w * pipe.renderer.getPixelRatio(), h * pipe.renderer.getPixelRatio());
   }
 
   function updateStageSpotFromOptics() {
@@ -168,7 +207,6 @@ export function create3DScene(canvas, params) {
     spotlightTarget.position.copy(center);
     stageSpot.position.copy(source);
 
-    // Fit cone to cover the rest-state sheet footprint (rough match to ray subsystem Option B).
     const corners = [
       new THREE.Vector3(-params.geometry.sheetWidth * 0.5, 0, 0),
       new THREE.Vector3(params.geometry.sheetWidth * 0.5, 0, 0),
@@ -206,8 +244,7 @@ export function create3DScene(canvas, params) {
     const reflectedOnly = params.volumetrics.debugRenderMode === "reflected-rays-only";
     const sceneOnly = params.volumetrics.debugRenderMode === "scene-only";
     const hideRayDebug = params.volumetrics.enabled && !params.volumetrics.showRays;
-    const needsVolumetricPass =
-      webgl2Ready &&
+    const needsVolumetric =
       params.volumetrics.enabled &&
       !reflectedOnly &&
       !sceneOnly;
@@ -216,7 +253,18 @@ export function create3DScene(canvas, params) {
     rig.setVisible(!reflectedOnly);
     stageSpot.visible = params.optics.enabled && !reflectedOnly;
     spotlight.setDebugMode(reflectedOnly ? "reflected-only" : hideRayDebug ? "hidden" : "default");
-    volumetricPass.enabled = needsVolumetricPass;
+
+    // Control compositing via uniforms (avoids node graph recompilation)
+    if (params.volumetrics.debugRenderMode === "volumetric-only") {
+      pipe.uShowScene.value = 0;
+      pipe.uShowVolumetric.value = 1;
+    } else if (sceneOnly || reflectedOnly) {
+      pipe.uShowScene.value = 1;
+      pipe.uShowVolumetric.value = 0;
+    } else {
+      pipe.uShowScene.value = 1;
+      pipe.uShowVolumetric.value = needsVolumetric ? 1 : 0;
+    }
   }
 
   function updatePrimaryLightDirection() {
@@ -225,13 +273,12 @@ export function create3DScene(canvas, params) {
     _primaryLightDir.subVectors(_volumeCenter, _source);
     if (_primaryLightDir.lengthSq() < 1e-8) _primaryLightDir.set(0, -0.4, 1);
     _primaryLightDir.normalize();
-    volumetricPass.raymarchMaterial.uniforms.uPrimaryLightDir.value.copy(_primaryLightDir);
+    pipe.volumetricRenderer.uniforms.primaryLightDir.value.copy(_primaryLightDir);
   }
 
   function updateVolumetrics(opticsState, frameDt) {
     const stats = volumetricState.stats;
     stats.enabled = !!params.volumetrics.enabled;
-    stats.webgl2Ready = webgl2Ready;
     stats.averageHitFraction = `${(opticsState?.runtime?.hitFraction ?? 0).toFixed(1)}%`;
     stats.raymarchSteps = Math.max(1, Math.floor(params.volumetrics.raymarchStepCount));
     stats.frameMs = `${(Math.max(0, frameDt) * 1000).toFixed(1)}`;
@@ -247,7 +294,7 @@ export function create3DScene(canvas, params) {
 
     volumetricDebug.updateBounds(volumetricState.boundsMin, volumetricState.boundsMax, params.volumetrics.showBounds);
 
-    if (!webgl2Ready || !params.volumetrics.enabled) {
+    if (!params.volumetrics.enabled) {
       stats.validReflectedRays = 0;
       stats.injectedRays = 0;
       volumetricDebug.updateSlice(params, volumetricState.boundsMin, volumetricState.boundsMax, null);
@@ -283,6 +330,9 @@ export function create3DScene(canvas, params) {
     }
 
     applyTemporalAccumulation(volumetricState.volumeData, volumetricState.historyData, params);
+    // WebGPU backend requires disposing the GPU texture before re-upload;
+    // unlike WebGL, setting needsUpdate alone throws "Texture already initialized".
+    volumetricState.volumeTexture.dispose();
     volumetricState.volumeTexture.needsUpdate = true;
     volumetricState.frameIndex += 1;
 
@@ -302,8 +352,20 @@ export function create3DScene(canvas, params) {
     updateToneMapping();
     updateRenderMode();
     updateVolumetrics(opticsState, frameInfo.frameDt ?? 1 / 60);
+
+    pipe.uCompositeOpacity.value = Math.max(0, params.volumetrics.compositeOpacity);
+
+    // Update controls first so camera matrices are current for both
+    // the volumetric render and the scene pass.
     controls.update();
-    composer.render();
+    camera.updateMatrixWorld();
+
+    // Render volumetric to its reduced-res target (before PostProcessing)
+    if (pipe.uShowVolumetric.value > 0 && params.volumetrics.enabled && volumetricState.volumeTexture) {
+      pipe.volumetricRenderer.render(pipe.renderer);
+    }
+
+    pipe.postProcessing.render();
   }
 
   return {
@@ -311,11 +373,11 @@ export function create3DScene(canvas, params) {
     syncState,
     update,
     async refreshEnvironment() {
-      await env.refresh();
+      await pipe.env.refresh();
       setMaterialIntensity();
     },
     getEnvironmentDiagnostics() {
-      return env.getDiagnostics();
+      return pipe.env.getDiagnostics();
     },
     updateMaterialParams() {
       setMaterialIntensity();
@@ -368,15 +430,12 @@ export function create3DScene(canvas, params) {
       return volumetricState.stats;
     },
     dispose() {
-      env.dispose();
       spotlight.dispose();
       sheet.dispose();
       person.dispose();
       volumetricDebug.dispose();
       disposeVolumetricState(volumetricState);
-      volumetricPass.dispose();
-      composer.dispose();
-      renderer.dispose();
+      pipe.dispose();
     }
   };
 }

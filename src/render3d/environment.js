@@ -1,10 +1,9 @@
-import * as THREE from "three";
+import * as THREE from "three/webgpu";
 import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
 export function setupEnvironment(renderer, scene, params) {
   const pmrem = new THREE.PMREMGenerator(renderer);
-  pmrem.compileEquirectangularShader();
   let envTexture = null;
   let activeSource = "none";
   const diagnostics = {

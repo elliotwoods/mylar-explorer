@@ -1,4 +1,4 @@
-import * as THREE from "three";
+import * as THREE from "three/webgpu";
 
 function makeCylinder(diameter, width, color) {
   const g = new THREE.CylinderGeometry(diameter * 0.5, diameter * 0.5, width, 28);
