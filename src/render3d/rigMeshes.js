@@ -30,13 +30,16 @@ export function createRigMeshes(scene, params) {
   const linkB = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 1, 12), linkMaterial);
   scene.add(linkA, linkB);
 
-  const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(14, 14),
-    new THREE.MeshStandardMaterial({ color: 0x1f2430, roughness: 0.9, metalness: 0.05 })
-  );
+  const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x1f2430, roughness: 0.9, metalness: 0.05 });
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(14, 14), floorMaterial);
   floor.rotation.x = -Math.PI * 0.5;
-  floor.position.y = -6.4;
+  floor.position.y = params.display.floorY ?? -6.4;
   floor.receiveShadow = true;
+  floor.visible = params.display.floorVisible !== false;
+  floorMaterial.color.set(params.display.floorColor ?? "#1f2430");
+  floorMaterial.color.multiplyScalar(Math.max(0, params.display.floorAlbedo ?? 1));
+  const initialFloorScale = Math.max(0.5, params.display.floorSize ?? 14) / 14;
+  floor.scale.set(initialFloorScale, initialFloorScale, 1);
   scene.add(floor);
 
   function updateLink(mesh, ax, ay, az, bx, by, bz) {
@@ -64,6 +67,13 @@ export function createRigMeshes(scene, params) {
       const halfW = params.geometry.sheetWidth * 0.5;
       updateLink(linkA, -halfW, -bottom.y, bottom.x, -halfW, -w.y, w.x);
       updateLink(linkB, halfW, -bottom.y, bottom.x, halfW, -w.y, w.x);
+
+      floor.visible = params.display.floorVisible !== false;
+      floor.position.y = params.display.floorY ?? -6.4;
+      const floorScale = Math.max(0.5, params.display.floorSize ?? 14) / 14;
+      floor.scale.set(floorScale, floorScale, 1);
+      floorMaterial.color.set(params.display.floorColor ?? "#1f2430");
+      floorMaterial.color.multiplyScalar(Math.max(0, params.display.floorAlbedo ?? 1));
     },
     rebuildGeometry() {
       topBatten.geometry.dispose();

@@ -2,8 +2,10 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { createSheetMesh } from "./sheetMesh.js";
 import { createRigMeshes } from "./rigMeshes.js";
+import { createPersonActor } from "./personActor.js";
 import { setupEnvironment } from "./environment.js";
 import { createSpotlightRays } from "./spotlightRays.js";
 import { createVolumetricDebug } from "./volumetricDebug.js";
@@ -22,11 +24,34 @@ import { VolumetricPass } from "../volumetrics/volumetricPass.js";
 const _source = new THREE.Vector3();
 const _volumeCenter = new THREE.Vector3();
 const _primaryLightDir = new THREE.Vector3(0, -0.4, 1).normalize();
+const _backgroundColor = new THREE.Color();
+
+function getToneMappingConstant(mode) {
+  switch (mode) {
+    case "aces":
+      return THREE.ACESFilmicToneMapping;
+    case "agx":
+      return THREE.AgXToneMapping;
+    case "neutral":
+      return THREE.NeutralToneMapping;
+    case "reinhard":
+      return THREE.ReinhardToneMapping;
+    case "cineon":
+      return THREE.CineonToneMapping;
+    case "linear":
+      return THREE.LinearToneMapping;
+    case "none":
+    default:
+      return THREE.NoToneMapping;
+  }
+}
 
 export function create3DScene(canvas, params) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  renderer.setClearColor(0x101720);
+  _backgroundColor.set(params.display.backgroundColor ?? "#101720");
+  _backgroundColor.multiplyScalar(Math.max(0, Math.min(1, params.display.backgroundIntensity ?? 1)));
+  renderer.setClearColor(_backgroundColor);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -60,6 +85,7 @@ export function create3DScene(canvas, params) {
 
   let sheet = createSheetMesh(params);
   const rig = createRigMeshes(scene, params);
+  const person = createPersonActor(scene, params, { floorY: -6.4 });
   scene.add(sheet.mesh);
 
   const env = setupEnvironment(renderer, scene, params);
@@ -81,6 +107,40 @@ export function create3DScene(canvas, params) {
   const volumetricPass = new VolumetricPass(camera, params, volumetricState);
   volumetricPass.enabled = webgl2Ready;
   composer.addPass(volumetricPass);
+  const outputPass = new OutputPass();
+  composer.addPass(outputPass);
+
+  const toneMappingState = {
+    mode: null,
+    exposure: null,
+    backgroundColor: null,
+    backgroundIntensity: null
+  };
+
+  function updateToneMapping() {
+    const mode = params.display.toneMappingMode || "aces";
+    const exposure = Math.max(0.01, params.display.toneMappingExposure ?? 1);
+    const backgroundColor = params.display.backgroundColor ?? "#101720";
+    const backgroundIntensity = Math.max(0, Math.min(1, params.display.backgroundIntensity ?? 1));
+    if (mode !== toneMappingState.mode || exposure !== toneMappingState.exposure) {
+      renderer.toneMapping = getToneMappingConstant(mode);
+      renderer.toneMappingExposure = exposure;
+      toneMappingState.mode = mode;
+      toneMappingState.exposure = exposure;
+    }
+    if (
+      backgroundColor !== toneMappingState.backgroundColor ||
+      backgroundIntensity !== toneMappingState.backgroundIntensity
+    ) {
+      _backgroundColor.set(backgroundColor);
+      _backgroundColor.multiplyScalar(backgroundIntensity);
+      renderer.setClearColor(_backgroundColor);
+      toneMappingState.backgroundColor = backgroundColor;
+      toneMappingState.backgroundIntensity = backgroundIntensity;
+    }
+  }
+
+  updateToneMapping();
 
   function setMaterialIntensity() {
     sheet.updateMaterial();
@@ -88,6 +148,7 @@ export function create3DScene(canvas, params) {
       mat.envMapIntensity = params.display.envIntensity;
       mat.needsUpdate = true;
     }
+    person.updateMaterials();
   }
   setMaterialIntensity();
 
@@ -137,6 +198,7 @@ export function create3DScene(canvas, params) {
     }
     sheet.updateFromState(state);
     rig.updateFromState(state);
+    person.syncFromParams();
     updateStageSpotFromOptics();
   }
 
@@ -236,6 +298,8 @@ export function create3DScene(canvas, params) {
   function update(state, opticsState, frameInfo = {}) {
     if (state) syncState(state);
     if (opticsState) spotlight.updateFromState(opticsState);
+    person.syncFromParams();
+    updateToneMapping();
     updateRenderMode();
     updateVolumetrics(opticsState, frameInfo.frameDt ?? 1 / 60);
     controls.update();
@@ -307,6 +371,7 @@ export function create3DScene(canvas, params) {
       env.dispose();
       spotlight.dispose();
       sheet.dispose();
+      person.dispose();
       volumetricDebug.dispose();
       disposeVolumetricState(volumetricState);
       volumetricPass.dispose();

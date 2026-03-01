@@ -232,7 +232,8 @@ export class VolumetricPass extends Pass {
     this.raymarchTarget = new THREE.WebGLRenderTarget(1, 1, {
       depthBuffer: false,
       stencilBuffer: false,
-      type: THREE.UnsignedByteType,
+      // Keep HDR range through the post chain so final tone mapping behaves correctly.
+      type: THREE.HalfFloatType,
       format: THREE.RGBAFormat,
       minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter

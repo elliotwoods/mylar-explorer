@@ -75,7 +75,22 @@ export const defaultParams = {
     roughness: 0.02,
     metalness: 1,
     hdriEnabled: true,
-    fallbackEnvironmentEnabled: true
+    fallbackEnvironmentEnabled: true,
+    toneMappingMode: "aces",
+    toneMappingExposure: 1.25,
+    backgroundColor: "#101720",
+    backgroundIntensity: 1,
+    floorVisible: true,
+    floorY: -6.4,
+    floorSize: 14,
+    floorColor: "#1f2430",
+    floorAlbedo: 1,
+    personVisible: true,
+    personX: 2.2,
+    personZ: -0.8,
+    personYawDeg: -25,
+    personScale: 1,
+    personFloorOffsetY: 0
   },
   scan: {
     active: false,

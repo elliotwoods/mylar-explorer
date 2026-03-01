@@ -27,6 +27,14 @@ function add(container, obj, key, label, hint, min, max, step, iconClass) {
   return c;
 }
 
+function addColor(container, obj, key, label, hint, iconClass) {
+  const c = container.addColor(obj, key);
+  c.name(label);
+  c.domElement.title = hint;
+  iconizeController(c, iconClass);
+  return c;
+}
+
 function createQuickControls(params, hooks, mount) {
   const state = {};
   const quick = document.createElement("div");
@@ -262,6 +270,40 @@ export function createControls(params, hooks, mounts) {
     add(gui, params.display, "metalness", "Mylar Metalness", "Higher values emphasize specular reflection.", 0, 1, 0.01);
     add(gui, params.display, "hdriEnabled", "HDRI Enabled", "Use HDR environment map if available.");
     add(gui, params.display, "fallbackEnvironmentEnabled", "Fallback Environment", "Use RoomEnvironment when HDRI unavailable.").onChange(hooks.onEnvironmentChange);
+
+    const tone = iconizeFolder(gui.addFolder("Tone Mapping"), "fa-sun");
+    const toneMode = tone.add(params.display, "toneMappingMode", {
+      ACES: "aces",
+      AgX: "agx",
+      Neutral: "neutral",
+      Reinhard: "reinhard",
+      Cineon: "cineon",
+      Linear: "linear",
+      None: "none"
+    });
+    toneMode.name("Operator");
+    toneMode.domElement.title = "Final output tone-mapping operator.";
+    add(tone, params.display, "toneMappingExposure", "Exposure", "Final tone-map exposure multiplier.", 0.1, 4, 0.01, "fa-circle-half-stroke");
+  });
+
+  createTab("scene", "Scene", "fa-cubes", (gui) => {
+    addColor(gui, params.display, "backgroundColor", "Background Color", "3D renderer clear/background color.", "fa-image");
+    add(gui, params.display, "backgroundIntensity", "Background Intensity", "Background brightness multiplier.", 0, 1, 0.01, "fa-circle-half-stroke");
+
+    const floor = iconizeFolder(gui.addFolder("Floor"), "fa-square");
+    add(floor, params.display, "floorVisible", "Show Floor", "Toggle floor visibility.");
+    add(floor, params.display, "floorY", "Floor Y (m)", "World-space floor height.", -20, 5, 0.01);
+    add(floor, params.display, "floorSize", "Floor Size (m)", "Floor plane size in meters.", 1, 60, 0.1);
+    addColor(floor, params.display, "floorColor", "Floor Color", "Base floor albedo tint.");
+    add(floor, params.display, "floorAlbedo", "Floor Albedo", "Brightness multiplier for floor material albedo.", 0, 3, 0.01);
+
+    const person = iconizeFolder(gui.addFolder("Person Actor"), "fa-person");
+    add(person, params.display, "personVisible", "Show Person", "Toggle person actor visibility.");
+    add(person, params.display, "personX", "Position X (m)", "World X position of person.", -12, 12, 0.01);
+    add(person, params.display, "personZ", "Position Z (m)", "World Z position of person.", -12, 12, 0.01);
+    add(person, params.display, "personYawDeg", "Yaw (deg)", "Rotation around vertical axis.", -180, 180, 1);
+    add(person, params.display, "personScale", "Scale Factor", "Global scale multiplier. Useful for unit mismatches (e.g. 10x or 0.1x).", 0.01, 20, 0.01);
+    add(person, params.display, "personFloorOffsetY", "Floor Offset Y (m)", "Additional vertical offset from floor contact.", -2, 2, 0.01);
   });
 
   createTab("optics", "Optics", "fa-lightbulb", (gui) => {
