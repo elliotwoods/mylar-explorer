@@ -62,6 +62,73 @@ function rebuildBeam() {
 }
 
 let accumulator = 0;
+const manualMouse = {
+  hasPrev: false,
+  prevX: 0,
+  lastMotionMs: performance.now(),
+  wasEnabled: false
+};
+let manualDriveUiDirty = false;
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function onManualPointerMove(event) {
+  if (!params.drive.manualOverrideEnabled) {
+    manualMouse.prevX = event.clientX;
+    manualMouse.hasPrev = true;
+    return;
+  }
+  if (!manualMouse.hasPrev) {
+    manualMouse.prevX = event.clientX;
+    manualMouse.hasPrev = true;
+    return;
+  }
+
+  const dx = event.clientX - manualMouse.prevX;
+  manualMouse.prevX = event.clientX;
+  if (Math.abs(dx) < 1e-6) return;
+
+  // Quarter-window normalization: moving by 1/4 width corresponds to ~30 degrees change.
+  const normWidth = Math.max(120, window.innerWidth * 0.25);
+  const deltaDeg = (dx / normWidth) * 30;
+  const next = clamp(params.drive.manualOverrideDeg + deltaDeg, -30, 30);
+  if (Math.abs(next - params.drive.manualOverrideDeg) > 1e-6) {
+    params.drive.manualOverrideDeg = next;
+    manualDriveUiDirty = true;
+  }
+  manualMouse.lastMotionMs = performance.now();
+}
+
+window.addEventListener("pointermove", onManualPointerMove);
+
+function updateManualOverrideDecay(frameDt, nowMs) {
+  const enabled = !!params.drive.manualOverrideEnabled;
+  if (enabled && !manualMouse.wasEnabled) {
+    manualMouse.wasEnabled = true;
+    manualMouse.hasPrev = false;
+    manualMouse.lastMotionMs = nowMs;
+  } else if (!enabled && manualMouse.wasEnabled) {
+    manualMouse.wasEnabled = false;
+    manualMouse.hasPrev = false;
+    manualDriveUiDirty = true;
+    return;
+  }
+  if (!enabled) return;
+
+  const idleSeconds = (nowMs - manualMouse.lastMotionMs) / 1000;
+  if (idleSeconds <= frameDt * 1.5) return;
+
+  const returnTime = Math.max(0.05, params.drive.manualDecaySeconds || 5);
+  // Exponential return reaching ~2% of previous value after ~returnTime seconds.
+  const decay = Math.exp((-4 * frameDt) / returnTime);
+  const prev = params.drive.manualOverrideDeg;
+  params.drive.manualOverrideDeg *= decay;
+  if (Math.abs(params.drive.manualOverrideDeg) < 1e-4) params.drive.manualOverrideDeg = 0;
+  if (Math.abs(params.drive.manualOverrideDeg - prev) > 1e-6) manualDriveUiDirty = true;
+}
+
 function hardResetSimulation() {
   model.reset();
   scene3d.rebuildRigGeometry();
@@ -76,6 +143,7 @@ function updatePauseButtonLabel() {
 
 function setSpeed(value) {
   params.display.simSpeed = Math.max(0.0625, Math.min(16, value));
+  controls.refresh();
 }
 
 const hooks = {
@@ -189,9 +257,13 @@ createToolbar({
 btnPause.addEventListener("click", () => {
   params.display.paused = !params.display.paused;
   updatePauseButtonLabel();
+  controls.refresh();
 });
 btnReset.addEventListener("click", () => hardResetSimulation());
-btnStep.addEventListener("click", () => hooks.singleStep());
+btnStep.addEventListener("click", () => {
+  hooks.singleStep();
+  controls.refresh();
+});
 btnHalf.addEventListener("click", () => setSpeed(params.display.simSpeed * 0.5));
 btn1x.addEventListener("click", () => setSpeed(1));
 btnDouble.addEventListener("click", () => setSpeed(params.display.simSpeed * 2));
@@ -231,6 +303,11 @@ function frame(now) {
   }
   const frameDt = Math.min(0.08, (now - lastTime) / 1000);
   lastTime = now;
+  updateManualOverrideDecay(frameDt, now);
+  if (manualDriveUiDirty) {
+    controls.refresh();
+    manualDriveUiDirty = false;
+  }
   accumulator += frameDt * params.display.simSpeed;
   updatePauseButtonLabel();
 
