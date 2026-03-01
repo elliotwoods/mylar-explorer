@@ -148,6 +148,9 @@ export function updateOptics(params, opticsState, targetMesh, options = {}) {
     runtime.missCount = 0;
     runtime.hitFraction = 0;
     runtime.incidentPositions = new Float32Array();
+    runtime.incidentRaySamples = new Float32Array();
+    runtime.incidentRayLengths = new Float32Array();
+    runtime.incidentRayCount = 0;
     runtime.reflectedPositions = new Float32Array();
     runtime.reflectedRaySamples = new Float32Array();
     runtime.reflectedRayCount = 0;
@@ -166,13 +169,31 @@ export function updateOptics(params, opticsState, targetMesh, options = {}) {
   const source = sourceFromParams(params);
   const rays = opticsState.rays;
   const totalRays = rays.length;
-  if (!totalRays) return;
+  if (!totalRays) {
+    const runtime = opticsState.runtime;
+    runtime.totalRays = 0;
+    runtime.hitCount = 0;
+    runtime.missCount = 0;
+    runtime.hitFraction = 0;
+    runtime.incidentPositions = new Float32Array();
+    runtime.incidentRaySamples = new Float32Array();
+    runtime.incidentRayLengths = new Float32Array();
+    runtime.incidentRayCount = 0;
+    runtime.reflectedPositions = new Float32Array();
+    runtime.reflectedRaySamples = new Float32Array();
+    runtime.reflectedRayCount = 0;
+    runtime.missPositions = new Float32Array();
+    runtime.hitPointPositions = new Float32Array();
+    return;
+  }
 
   const traceStride = Math.max(1, Math.ceil(totalRays / Math.max(1, params.optics.maxTracedRays)));
   const estimatedTracedRays = Math.ceil(totalRays / traceStride);
   // Draw decimation should operate on the traced-ray set, not full grid index space.
   const drawStride = Math.max(1, Math.ceil(estimatedTracedRays / Math.max(1, params.optics.maxRenderedRays)));
   const inc = [];
+  const incidentSamples = [];
+  const incidentLengths = [];
   const refl = [];
   const reflectedSamples = [];
   const miss = [];
@@ -230,6 +251,8 @@ export function updateOptics(params, opticsState, targetMesh, options = {}) {
       const n = orientNormalAgainstIncoming(hit.normal, _incoming);
       _ref.copy(reflectDirection(_incoming, n));
       _vA.copy(_point).addScaledVector(_ref, params.optics.reflectedLength);
+      incidentSamples.push(origin.x, origin.y, origin.z, _incoming.x, _incoming.y, _incoming.z);
+      incidentLengths.push(Math.max(0, _point.distanceTo(origin)));
       reflectedSamples.push(_point.x, _point.y, _point.z, _ref.x, _ref.y, _ref.z);
 
       if (inDrawSet) {
@@ -266,6 +289,9 @@ export function updateOptics(params, opticsState, targetMesh, options = {}) {
   runtime.missCount = missCount;
   runtime.hitFraction = tracedCount > 0 ? (hitCount / tracedCount) * 100 : 0;
   runtime.incidentPositions = new Float32Array(inc);
+  runtime.incidentRaySamples = new Float32Array(incidentSamples);
+  runtime.incidentRayLengths = new Float32Array(incidentLengths);
+  runtime.incidentRayCount = incidentLengths.length;
   runtime.reflectedPositions = new Float32Array(refl);
   runtime.reflectedRaySamples = new Float32Array(reflectedSamples);
   runtime.reflectedRayCount = hitCount;

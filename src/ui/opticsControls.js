@@ -13,6 +13,16 @@ export function createOpticsControls(gui, params, hooks, statsModel) {
   add(optics, params.optics, "sourceZ", "Source Z (m)", "Spotlight point-source Z position.", -8, 8, 0.01).onFinishChange(hooks.onOpticsRebuild);
   add(optics, params.optics, "sampleCountU", "Samples U (Width)", "Beam samples across sheet width.", 2, 90, 1).onFinishChange(hooks.onOpticsRebuild);
   add(optics, params.optics, "sampleCountV", "Samples V (Height)", "Beam samples along sheet height.", 2, 140, 1).onFinishChange(hooks.onOpticsRebuild);
+  add(
+    optics,
+    params.optics,
+    "coveragePercent",
+    "Lit Coverage (%)",
+    "Bottom-up coverage of the sheet lit by the source rays. 0% = bottom edge only, 100% = full sheet height.",
+    0,
+    100,
+    1
+  ).onFinishChange(hooks.onOpticsRebuild);
   add(optics, params.optics, "randomizeWithinCell", "Randomize Within Cell", "Jitter each UV sample inside its grid cell.").onFinishChange(hooks.onOpticsRebuild);
   add(optics, params.optics, "randomJitterAmount", "Random Amount", "Jitter amount from 0 (off) to 1 (full cell).", 0, 1, 0.01).onFinishChange(hooks.onOpticsRebuild);
   add(optics, params.optics, "randomSeed", "Random Seed", "Deterministic seed for random sampling.", 1, 999999, 1).onFinishChange(hooks.onOpticsRebuild);

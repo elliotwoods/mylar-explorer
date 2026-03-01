@@ -5,6 +5,7 @@ export const defaultOpticsParams = {
   sourceZ: -2.8,
   sampleCountU: 25,
   sampleCountV: 120,
+  coveragePercent: 100,
   randomizeWithinCell: false,
   randomJitterAmount: 1,
   randomSeed: 1337,

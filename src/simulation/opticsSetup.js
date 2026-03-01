@@ -24,6 +24,10 @@ export function rebuildRestBeam(params, opticsState) {
   const vCount = Math.max(2, Math.floor(params.optics.sampleCountV));
   const randomize = !!params.optics.randomizeWithinCell;
   const jitterAmount = Math.max(0, Math.min(1, params.optics.randomJitterAmount ?? 1));
+  const coverage = Math.max(0, Math.min(1, (params.optics.coveragePercent ?? 100) / 100));
+  // Coverage is measured bottom-up: 0% = only the bottom edge, 100% = full sheet to the top.
+  const vMin = 1 - coverage;
+  const vMax = 1;
   const rand = makeSeededRng(Math.floor(params.optics.randomSeed || 1));
 
   const centerU = Math.floor((uCount - 1) * 0.5);
@@ -33,12 +37,13 @@ export function rebuildRestBeam(params, opticsState) {
     for (let i = 0; i < uCount; i += 1) {
       const du = uCount > 1 ? 1 / (uCount - 1) : 1;
       let u = uCount === 1 ? 0.5 : i / (uCount - 1);
-      let v = vCount === 1 ? 0 : j / (vCount - 1);
+      const v01 = vCount === 1 ? 1 : j / (vCount - 1);
+      let v = vMin + v01 * (vMax - vMin);
       if (randomize) {
         const ju = (rand() - 0.5) * du * jitterAmount;
         const jv = (rand() - 0.5) * dv * jitterAmount;
         u = Math.max(0, Math.min(1, u + ju));
-        v = Math.max(0, Math.min(1, v + jv));
+        v = Math.max(vMin, Math.min(vMax, v + jv));
       }
       const x = -w * 0.5 + u * w;
       const y = -v * h;

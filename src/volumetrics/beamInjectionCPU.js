@@ -110,9 +110,14 @@ export function injectReflectedBeamsCPU({
   if (!volumeData || !opticsState?.runtime) return;
   if (params.volumetrics.clearEachFrame || params.volumetrics.temporalAccumulation) clearVolume(volumeData);
 
-  const samples = opticsState.runtime.reflectedRaySamples;
-  const rayCount = opticsState.runtime.reflectedRayCount || 0;
-  if (!samples || !rayCount) {
+  const reflectedSamples = opticsState.runtime.reflectedRaySamples;
+  const reflectedCount = opticsState.runtime.reflectedRayCount || 0;
+  const incidentSamples = opticsState.runtime.incidentRaySamples;
+  const incidentLengths = opticsState.runtime.incidentRayLengths;
+  const incidentCount = opticsState.runtime.incidentRayCount || 0;
+  const includeIncident = !!params.volumetrics.injectIncidentRays;
+
+  if ((!reflectedSamples || !reflectedCount) && (!includeIncident || !incidentSamples || !incidentCount)) {
     if (stats) {
       stats.validReflectedRays = 0;
       stats.injectedRays = 0;
@@ -134,56 +139,64 @@ export function injectReflectedBeamsCPU({
 
   let injectedRays = 0;
 
-  for (let i = 0; i < rayCount; i += 1) {
-    const base = i * 6;
-    _pos.set(samples[base], samples[base + 1], samples[base + 2]);
-    const dirX = samples[base + 3];
-    const dirY = samples[base + 4];
-    const dirZ = samples[base + 5];
+  function injectRaySet(samples, rayCount, lengths) {
+    for (let i = 0; i < rayCount; i += 1) {
+      const base = i * 6;
+      _pos.set(samples[base], samples[base + 1], samples[base + 2]);
+      const dirX = samples[base + 3];
+      const dirY = samples[base + 4];
+      const dirZ = samples[base + 5];
 
-    const isect = rayAabbIntersection(_pos, { x: dirX, y: dirY, z: dirZ }, boundsMin, boundsMax, _isect);
-    if (!isect) continue;
+      const isect = rayAabbIntersection(_pos, { x: dirX, y: dirY, z: dirZ }, boundsMin, boundsMax, _isect);
+      if (!isect) continue;
 
-    const tEntry = Math.max(0, isect.tMin);
-    const tExit = Math.min(maxBeamDistance, isect.tMax);
-    if (tExit <= tEntry) continue;
+      const rayLengthLimit = lengths ? Math.max(0, lengths[i] || 0) : maxBeamDistance;
+      const tEntry = Math.max(0, isect.tMin);
+      const tExit = Math.min(maxBeamDistance, rayLengthLimit, isect.tMax);
+      if (tExit <= tEntry) continue;
 
-    injectedRays += 1;
-    const segmentLength = tExit - tEntry;
-    const steps = Math.max(1, Math.ceil(segmentLength / stepSize));
-    const energyPerStep = baseEnergyPerRay / steps;
+      injectedRays += 1;
+      const segmentLength = tExit - tEntry;
+      const steps = Math.max(1, Math.ceil(segmentLength / stepSize));
+      const energyPerStep = baseEnergyPerRay / steps;
 
-    for (let s = 0; s < steps; s += 1) {
-      const t = tEntry + ((s + 0.5) / steps) * segmentLength;
-      _pos.set(
-        samples[base] + dirX * t,
-        samples[base + 1] + dirY * t,
-        samples[base + 2] + dirZ * t
-      );
-      worldToVolumeGrid(_pos, boundsMin, boundsMax, resolution, _grid);
+      for (let s = 0; s < steps; s += 1) {
+        const t = tEntry + ((s + 0.5) / steps) * segmentLength;
+        _pos.set(
+          samples[base] + dirX * t,
+          samples[base + 1] + dirY * t,
+          samples[base + 2] + dirZ * t
+        );
+        worldToVolumeGrid(_pos, boundsMin, boundsMax, resolution, _grid);
 
-      if (
-        _grid.x < -0.5 || _grid.x > resolution.x - 0.5 ||
-        _grid.y < -0.5 || _grid.y > resolution.y - 0.5 ||
-        _grid.z < -0.5 || _grid.z > resolution.z - 0.5
-      ) {
-        continue;
-      }
-
-      if (radiusMeters <= Math.min(_voxel.x, _voxel.y, _voxel.z) * 0.6) {
-        if (radiusMeters <= 1e-4) {
-          depositNearest(volumeData, resolution, _grid.x, _grid.y, _grid.z, energyPerStep);
-        } else {
-          depositTrilinear(volumeData, resolution, _grid.x, _grid.y, _grid.z, energyPerStep);
+        if (
+          _grid.x < -0.5 || _grid.x > resolution.x - 0.5 ||
+          _grid.y < -0.5 || _grid.y > resolution.y - 0.5 ||
+          _grid.z < -0.5 || _grid.z > resolution.z - 0.5
+        ) {
+          continue;
         }
-      } else {
-        depositSoftKernel(volumeData, resolution, _grid.x, _grid.y, _grid.z, radiusCells, energyPerStep);
+
+        if (radiusMeters <= Math.min(_voxel.x, _voxel.y, _voxel.z) * 0.6) {
+          if (radiusMeters <= 1e-4) {
+            depositNearest(volumeData, resolution, _grid.x, _grid.y, _grid.z, energyPerStep);
+          } else {
+            depositTrilinear(volumeData, resolution, _grid.x, _grid.y, _grid.z, energyPerStep);
+          }
+        } else {
+          depositSoftKernel(volumeData, resolution, _grid.x, _grid.y, _grid.z, radiusCells, energyPerStep);
+        }
       }
     }
   }
 
+  injectRaySet(reflectedSamples, reflectedCount, null);
+  if (includeIncident) {
+    injectRaySet(incidentSamples, incidentCount, incidentLengths);
+  }
+
   if (stats) {
-    stats.validReflectedRays = rayCount;
+    stats.validReflectedRays = reflectedCount;
     stats.injectedRays = injectedRays;
   }
 }
