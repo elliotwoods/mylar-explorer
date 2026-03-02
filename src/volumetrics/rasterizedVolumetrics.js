@@ -13,9 +13,13 @@ function qualityScale(mode) {
 /**
  * Rasterized volumetric renderer.
  *
- * Instead of raymarching a 3D texture, this builds triangular prism geometry
- * from the reflected ray grid (Delaunay-style grid triangulation), then
- * rasterises those prisms with a scattering fragment shader.
+ * Builds square prism geometry from the traced ray grid — one prism per
+ * grid cell (i,j)→(i+1,j+1) for reflected beams and optionally another for
+ * incoming beams. Because prisms share edges with neighbours the resulting
+ * volume is watertight with no gaps.
+ *
+ * Each prism has 8 vertices (4 near + 4 far) and 4 side quads (8 triangles).
+ * Uniform brightness across the cross-section ensures no visible seams.
  *
  * Optical model per fragment:
  *   irradiance    = totalPower / (numRays × crossSectionArea)
@@ -27,7 +31,7 @@ function qualityScale(mode) {
  *   - Back-face only (THREE.BackSide): each camera ray hits at most one
  *     back face per convex prism → exactly one contribution per beam per pixel.
  *   - Additive blending: contributions from all beams sum naturally.
- *   - No depth write / no depth test: all beams visible regardless of order.
+ *   - Depth tested against scene depth prepass so beams are occluded by scene geometry.
  */
 export class RasterizedVolumetricRenderer {
   constructor(camera, params) {
@@ -43,8 +47,7 @@ export class RasterizedVolumetricRenderer {
       forwardScatterBias: uniform(0.6),
       intensity: uniform(1.45),
       beamPower: uniform(1.0),
-      numRays: uniform(1.0),
-      pipeSoftness: uniform(3.0)
+      numRays: uniform(1.0)
     };
     this.uniforms = u;
 
@@ -55,20 +58,12 @@ export class RasterizedVolumetricRenderer {
       const tParam = attribute("tParam", "float");
       const nearArea = attribute("nearArea", "float");
       const farArea = attribute("farArea", "float");
-      const centroidPos = attribute("centroidPos", "vec3");
-      const beamRadius = attribute("beamRadius", "float");
 
-      // Cross-section area at this depth (use original un-oversized area for energy)
+      // Cross-section area at this depth
       const area = max(mix(nearArea, farArea, tParam), float(1e-8));
 
-      // ── Gaussian cross-section falloff ──
-      // Distance from fragment to interpolated prism centroid axis
-      const worldPos = positionWorld;
-      const distFromAxis = length(worldPos.sub(centroidPos));
-      const normDist = distFromAxis.div(max(beamRadius, float(1e-4)));
-      const gaussFade = exp(u.pipeSoftness.negate().mul(normDist).mul(normDist));
-
       // View direction: fragment → camera
+      const worldPos = positionWorld;
       const viewDir = normalize(cameraPosition.sub(worldPos));
       const distToCamera = length(cameraPosition.sub(worldPos));
 
@@ -105,8 +100,7 @@ export class RasterizedVolumetricRenderer {
         .mul(u.hazeDensity)
         .mul(directionalBoost)
         .mul(transmittance)
-        .mul(u.intensity)
-        .mul(gaussFade);
+        .mul(u.intensity);
 
       return vec4(vec3(scattered), scattered);
     });
@@ -115,7 +109,8 @@ export class RasterizedVolumetricRenderer {
     this.material = new THREE.NodeMaterial();
     this.material.transparent = true;
     this.material.depthWrite = false;
-    this.material.depthTest = false;
+    this.material.depthTest = true;
+    this.material.depthFunc = THREE.LessEqualDepth;
     this.material.side = THREE.BackSide;
     this.material.blending = THREE.AdditiveBlending;
     this.material.fragmentNode = fragmentFn();
@@ -131,7 +126,7 @@ export class RasterizedVolumetricRenderer {
 
     // ── Render target (matches raymarched version) ─────────────────────
     this.renderTarget = new THREE.RenderTarget(1, 1, {
-      depthBuffer: false,
+      depthBuffer: true,
       stencilBuffer: false,
       type: THREE.HalfFloatType,
       format: THREE.RGBAFormat,
@@ -149,13 +144,18 @@ export class RasterizedVolumetricRenderer {
     this._tParams = null;
     this._nearAreas = null;
     this._farAreas = null;
-    this._centroids = null;
-    this._radii = null;
     this._indices = null;
     this._gridMap = null;
     this._prismCount = 0;
     this._reflectedCount = 0;
+    this._incidentCount = 0;
+    this._beamRayCount = 0;
     this._clearColor = new THREE.Color(0x000000);
+    this._depthPrepassMaterial = new THREE.MeshDepthMaterial();
+    this._depthPrepassMaterial.depthTest = true;
+    this._depthPrepassMaterial.depthWrite = true;
+    this._depthPrepassMaterial.colorWrite = false;
+    this._depthPrepassMaterial.side = THREE.DoubleSide;
   }
 
   // ── Buffer management ──────────────────────────────────────────────
@@ -164,16 +164,14 @@ export class RasterizedVolumetricRenderer {
     if (maxPrisms <= this._maxPrisms) return;
     this._maxPrisms = maxPrisms;
 
-    const maxVerts = maxPrisms * 6;
-    const maxIdx = maxPrisms * 18;
+    const maxVerts = maxPrisms * 8;   // 4 near + 4 far per quad prism
+    const maxIdx = maxPrisms * 24;    // 4 side quads × 2 tris × 3 indices
 
     this._positions = new Float32Array(maxVerts * 3);
     this._beamDirs = new Float32Array(maxVerts * 3);
     this._tParams = new Float32Array(maxVerts);
     this._nearAreas = new Float32Array(maxVerts);
     this._farAreas = new Float32Array(maxVerts);
-    this._centroids = new Float32Array(maxVerts * 3);
-    this._radii = new Float32Array(maxVerts);
     this._indices = new Uint32Array(maxIdx);
 
     const g = this.geometry;
@@ -182,8 +180,6 @@ export class RasterizedVolumetricRenderer {
     g.setAttribute("tParam", new THREE.BufferAttribute(this._tParams, 1));
     g.setAttribute("nearArea", new THREE.BufferAttribute(this._nearAreas, 1));
     g.setAttribute("farArea", new THREE.BufferAttribute(this._farAreas, 1));
-    g.setAttribute("centroidPos", new THREE.BufferAttribute(this._centroids, 3));
-    g.setAttribute("beamRadius", new THREE.BufferAttribute(this._radii, 1));
     g.setIndex(new THREE.BufferAttribute(this._indices, 1));
   }
 
@@ -194,6 +190,8 @@ export class RasterizedVolumetricRenderer {
       this.geometry.setDrawRange(0, 0);
       this._prismCount = 0;
       this._reflectedCount = 0;
+      this._incidentCount = 0;
+      this._beamRayCount = 0;
       return;
     }
     const rays = opticsState.rays;
@@ -201,9 +199,15 @@ export class RasterizedVolumetricRenderer {
     const reflectedSamples = runtime.reflectedRaySamples;
     const reflectedIndices = runtime.reflectedRayIndices;
     const reflectedCount = runtime.reflectedRayCount || 0;
+    const incidentSamples = runtime.incidentRaySamples;
+    const incidentLengths = runtime.incidentRayLengths;
+    const incidentCount = runtime.incidentRayCount || 0;
+    const includeIncident = !!this.params.volumetrics.injectIncidentRays;
     const p = this.params;
 
     this._reflectedCount = reflectedCount;
+    this._incidentCount = includeIncident ? incidentCount : 0;
+    this._beamRayCount = reflectedCount + this._incidentCount;
 
     if (!reflectedCount || !reflectedSamples || !reflectedIndices || !rays.length) {
       this.geometry.setDrawRange(0, 0);
@@ -230,7 +234,8 @@ export class RasterizedVolumetricRenderer {
       }
     }
 
-    const maxPrisms = 2 * (uCount - 1) * (vCount - 1);
+    const prismsPerCell = includeIncident ? 2 : 1;
+    const maxPrisms = (uCount - 1) * (vCount - 1) * prismsPerCell;
     this._ensureBuffers(maxPrisms);
 
     const positions = this._positions;
@@ -238,123 +243,104 @@ export class RasterizedVolumetricRenderer {
     const tParams = this._tParams;
     const nearAreas = this._nearAreas;
     const farAreas = this._farAreas;
-    const centroids = this._centroids;
-    const radii = this._radii;
     const indices = this._indices;
-    const oversize = Math.max(1, p.volumetrics.pipeOversize);
 
     let vertIdx = 0;
     let idxIdx = 0;
 
-    function triArea(ax, ay, az, bx, by, bz, cx, cy, cz) {
-      const e1x = bx - ax, e1y = by - ay, e1z = bz - az;
-      const e2x = cx - ax, e2y = cy - ay, e2z = cz - az;
-      const nx = e1y * e2z - e1z * e2y;
-      const ny = e1z * e2x - e1x * e2z;
-      const nz = e1x * e2y - e1y * e2x;
-      return 0.5 * Math.sqrt(nx * nx + ny * ny + nz * nz);
+    // Area of a quad (two triangles sharing a diagonal)
+    function quadArea(ax, ay, az, bx, by, bz, cx, cy, cz, dx, dy, dz) {
+      // triangle ABC
+      let e1x = bx - ax, e1y = by - ay, e1z = bz - az;
+      let e2x = cx - ax, e2y = cy - ay, e2z = cz - az;
+      let nx = e1y * e2z - e1z * e2y;
+      let ny = e1z * e2x - e1x * e2z;
+      let nz = e1x * e2y - e1y * e2x;
+      const a1 = 0.5 * Math.sqrt(nx * nx + ny * ny + nz * nz);
+      // triangle ACD
+      e1x = cx - ax; e1y = cy - ay; e1z = cz - az;
+      e2x = dx - ax; e2y = dy - ay; e2z = dz - az;
+      nx = e1y * e2z - e1z * e2y;
+      ny = e1z * e2x - e1x * e2z;
+      nz = e1x * e2y - e1y * e2x;
+      const a2 = 0.5 * Math.sqrt(nx * nx + ny * ny + nz * nz);
+      return a1 + a2;
     }
 
-    // Characteristic radius of a triangle: radius of circumscribed circle approximation
-    function triRadius(area) {
-      // For an equilateral triangle with area A, circumradius = sqrt(4A/3√3).
-      // We use a simpler heuristic: r ≈ sqrt(A / π) (radius of equal-area circle).
-      return Math.sqrt(Math.max(0, area) / Math.PI);
-    }
+    // Add a square prism from 4 grid-corner reflected-ray indices.
+    // Corner order: 00(i,j) → 10(i+1,j) → 11(i+1,j+1) → 01(i,j+1)
+    const addQuadPrism = (k00, k10, k11, k01, s, lengths = null, defaultLength = maxBeamDist) => {
+      const b00 = k00 * 6, b10 = k10 * 6, b11 = k11 * 6, b01 = k01 * 6;
 
-    const addPrism = (k0, k1, k2) => {
-      const b0 = k0 * 6, b1 = k1 * 6, b2 = k2 * 6;
+      // Near positions (ray hit points)
+      const n00x = s[b00], n00y = s[b00+1], n00z = s[b00+2];
+      const n10x = s[b10], n10y = s[b10+1], n10z = s[b10+2];
+      const n11x = s[b11], n11y = s[b11+1], n11z = s[b11+2];
+      const n01x = s[b01], n01y = s[b01+1], n01z = s[b01+2];
 
-      const n0x = reflectedSamples[b0], n0y = reflectedSamples[b0 + 1], n0z = reflectedSamples[b0 + 2];
-      const n1x = reflectedSamples[b1], n1y = reflectedSamples[b1 + 1], n1z = reflectedSamples[b1 + 2];
-      const n2x = reflectedSamples[b2], n2y = reflectedSamples[b2 + 1], n2z = reflectedSamples[b2 + 2];
+      // Ray directions
+      const d00x = s[b00+3], d00y = s[b00+4], d00z = s[b00+5];
+      const d10x = s[b10+3], d10y = s[b10+4], d10z = s[b10+5];
+      const d11x = s[b11+3], d11y = s[b11+4], d11z = s[b11+5];
+      const d01x = s[b01+3], d01y = s[b01+4], d01z = s[b01+5];
 
-      const d0x = reflectedSamples[b0 + 3], d0y = reflectedSamples[b0 + 4], d0z = reflectedSamples[b0 + 5];
-      const d1x = reflectedSamples[b1 + 3], d1y = reflectedSamples[b1 + 4], d1z = reflectedSamples[b1 + 5];
-      const d2x = reflectedSamples[b2 + 3], d2y = reflectedSamples[b2 + 4], d2z = reflectedSamples[b2 + 5];
+      // Far positions
+      const l00 = Math.max(0.001, lengths ? lengths[k00] ?? defaultLength : defaultLength);
+      const l10 = Math.max(0.001, lengths ? lengths[k10] ?? defaultLength : defaultLength);
+      const l11 = Math.max(0.001, lengths ? lengths[k11] ?? defaultLength : defaultLength);
+      const l01 = Math.max(0.001, lengths ? lengths[k01] ?? defaultLength : defaultLength);
+      const f00x = n00x + d00x * l00, f00y = n00y + d00y * l00, f00z = n00z + d00z * l00;
+      const f10x = n10x + d10x * l10, f10y = n10y + d10y * l10, f10z = n10z + d10z * l10;
+      const f11x = n11x + d11x * l11, f11y = n11y + d11y * l11, f11z = n11z + d11z * l11;
+      const f01x = n01x + d01x * l01, f01y = n01y + d01y * l01, f01z = n01z + d01z * l01;
 
-      // Original (un-expanded) far positions
-      let f0x = n0x + d0x * maxBeamDist, f0y = n0y + d0y * maxBeamDist, f0z = n0z + d0z * maxBeamDist;
-      let f1x = n1x + d1x * maxBeamDist, f1y = n1y + d1y * maxBeamDist, f1z = n1z + d1z * maxBeamDist;
-      let f2x = n2x + d2x * maxBeamDist, f2y = n2y + d2y * maxBeamDist, f2z = n2z + d2z * maxBeamDist;
-
-      const nArea = triArea(n0x, n0y, n0z, n1x, n1y, n1z, n2x, n2y, n2z);
-      const fArea = triArea(f0x, f0y, f0z, f1x, f1y, f1z, f2x, f2y, f2z);
-
+      const nArea = quadArea(n00x,n00y,n00z, n10x,n10y,n10z, n11x,n11y,n11z, n01x,n01y,n01z);
+      const fArea = quadArea(f00x,f00y,f00z, f10x,f10y,f10z, f11x,f11y,f11z, f01x,f01y,f01z);
       if (nArea < 1e-8 && fArea < 1e-8) return;
 
-      // Centroids of near and far triangles (before expansion)
-      const nCx = (n0x + n1x + n2x) / 3, nCy = (n0y + n1y + n2y) / 3, nCz = (n0z + n1z + n2z) / 3;
-      const fCx = (f0x + f1x + f2x) / 3, fCy = (f0y + f1y + f2y) / 3, fCz = (f0z + f1z + f2z) / 3;
-
-      // Characteristic radii (of original triangles, before oversize)
-      const nRad = triRadius(nArea);
-      const fRad = triRadius(fArea);
-
-      // Expand vertices outward from centroid by oversize factor
-      const expandNear = (vx, vy, vz) => [
-        nCx + (vx - nCx) * oversize,
-        nCy + (vy - nCy) * oversize,
-        nCz + (vz - nCz) * oversize
-      ];
-      const expandFar = (vx, vy, vz) => [
-        fCx + (vx - fCx) * oversize,
-        fCy + (vy - fCy) * oversize,
-        fCz + (vz - fCz) * oversize
-      ];
-
-      const en0 = expandNear(n0x, n0y, n0z);
-      const en1 = expandNear(n1x, n1y, n1z);
-      const en2 = expandNear(n2x, n2y, n2z);
-      const ef0 = expandFar(f0x, f0y, f0z);
-      const ef1 = expandFar(f1x, f1y, f1z);
-      const ef2 = expandFar(f2x, f2y, f2z);
-
-      // Expanded radii (for falloff normalization)
-      const nRadExp = nRad * oversize;
-      const fRadExp = fRad * oversize;
+      // Average beam direction for this cell
+      const avgDx = (d00x+d10x+d11x+d01x)*0.25;
+      const avgDy = (d00y+d10y+d11y+d01y)*0.25;
+      const avgDz = (d00z+d10z+d11z+d01z)*0.25;
 
       const base = vertIdx;
 
-      // [expanded pos(3), beamDir(3), t, centroid(3), radius]
-      const verts = [
-        [...en0, d0x, d0y, d0z, 0, nCx, nCy, nCz, nRadExp],
-        [...en1, d1x, d1y, d1z, 0, nCx, nCy, nCz, nRadExp],
-        [...en2, d2x, d2y, d2z, 0, nCx, nCy, nCz, nRadExp],
-        [...ef0, d0x, d0y, d0z, 1, fCx, fCy, fCz, fRadExp],
-        [...ef1, d1x, d1y, d1z, 1, fCx, fCy, fCz, fRadExp],
-        [...ef2, d2x, d2y, d2z, 1, fCx, fCy, fCz, fRadExp]
+      // 8 vertices: near 00,10,11,01 then far 00,10,11,01
+      // [pos(3), beamDir(3), t]
+      const vdata = [
+        n00x,n00y,n00z, n10x,n10y,n10z, n11x,n11y,n11z, n01x,n01y,n01z,
+        f00x,f00y,f00z, f10x,f10y,f10z, f11x,f11y,f11z, f01x,f01y,f01z
       ];
 
-      for (let vi = 0; vi < 6; vi++) {
-        const v = verts[vi];
+      for (let vi = 0; vi < 8; vi++) {
         const p3 = (vertIdx + vi) * 3;
-        positions[p3] = v[0];
-        positions[p3 + 1] = v[1];
-        positions[p3 + 2] = v[2];
-        beamDirs[p3] = v[3];
-        beamDirs[p3 + 1] = v[4];
-        beamDirs[p3 + 2] = v[5];
-        tParams[vertIdx + vi] = v[6];
+        const s3 = vi * 3;
+        positions[p3]   = vdata[s3];
+        positions[p3+1] = vdata[s3+1];
+        positions[p3+2] = vdata[s3+2];
+        beamDirs[p3]    = avgDx;
+        beamDirs[p3+1]  = avgDy;
+        beamDirs[p3+2]  = avgDz;
+        tParams[vertIdx + vi]   = vi < 4 ? 0 : 1;
         nearAreas[vertIdx + vi] = nArea;
-        farAreas[vertIdx + vi] = fArea;
-        centroids[p3] = v[7];
-        centroids[p3 + 1] = v[8];
-        centroids[p3 + 2] = v[9];
-        radii[vertIdx + vi] = v[10];
+        farAreas[vertIdx + vi]  = fArea;
       }
 
-      vertIdx += 6;
+      vertIdx += 8;
 
-      const v0n = base, v1n = base + 1, v2n = base + 2;
-      const v0f = base + 3, v1f = base + 4, v2f = base + 5;
+      // Near: 0=00, 1=10, 2=11, 3=01   Far: 4=00, 5=10, 6=11, 7=01
+      const n0 = base, n1 = base+1, n2 = base+2, n3 = base+3;
+      const f0 = base+4, f1 = base+5, f2 = base+6, f3 = base+7;
 
-      indices[idxIdx++] = v0n; indices[idxIdx++] = v1n; indices[idxIdx++] = v1f;
-      indices[idxIdx++] = v0n; indices[idxIdx++] = v1f; indices[idxIdx++] = v0f;
-      indices[idxIdx++] = v1n; indices[idxIdx++] = v2n; indices[idxIdx++] = v2f;
-      indices[idxIdx++] = v1n; indices[idxIdx++] = v2f; indices[idxIdx++] = v1f;
-      indices[idxIdx++] = v2n; indices[idxIdx++] = v0n; indices[idxIdx++] = v0f;
-      indices[idxIdx++] = v2n; indices[idxIdx++] = v0f; indices[idxIdx++] = v2f;
+      // 4 side quads (outward-facing front, BackSide renders interior exit face)
+      indices[idxIdx++] = n0; indices[idxIdx++] = n1; indices[idxIdx++] = f1;
+      indices[idxIdx++] = n0; indices[idxIdx++] = f1; indices[idxIdx++] = f0;
+      indices[idxIdx++] = n1; indices[idxIdx++] = n2; indices[idxIdx++] = f2;
+      indices[idxIdx++] = n1; indices[idxIdx++] = f2; indices[idxIdx++] = f1;
+      indices[idxIdx++] = n2; indices[idxIdx++] = n3; indices[idxIdx++] = f3;
+      indices[idxIdx++] = n2; indices[idxIdx++] = f3; indices[idxIdx++] = f2;
+      indices[idxIdx++] = n3; indices[idxIdx++] = n0; indices[idxIdx++] = f0;
+      indices[idxIdx++] = n3; indices[idxIdx++] = f0; indices[idxIdx++] = f3;
     };
 
     for (let j = 0; j < vCount - 1; j++) {
@@ -364,12 +350,17 @@ export class RasterizedVolumetricRenderer {
         const k01 = this._gridMap[(j + 1) * uCount + i];
         const k11 = this._gridMap[(j + 1) * uCount + (i + 1)];
 
-        if (k00 >= 0 && k10 >= 0 && k11 >= 0) addPrism(k00, k10, k11);
-        if (k00 >= 0 && k11 >= 0 && k01 >= 0) addPrism(k00, k11, k01);
+        // Need all 4 corners to form a watertight quad prism
+        if (k00 >= 0 && k10 >= 0 && k11 >= 0 && k01 >= 0) {
+          addQuadPrism(k00, k10, k11, k01, reflectedSamples, null, maxBeamDist);
+          if (includeIncident && incidentSamples && incidentCount > 0 && incidentLengths && incidentLengths.length > 0) {
+            addQuadPrism(k00, k10, k11, k01, incidentSamples, incidentLengths, maxBeamDist);
+          }
+        }
       }
     }
 
-    this._prismCount = vertIdx / 6;
+    this._prismCount = vertIdx / 8;
 
     const g = this.geometry;
     g.attributes.position.needsUpdate = true;
@@ -377,8 +368,6 @@ export class RasterizedVolumetricRenderer {
     g.attributes.tParam.needsUpdate = true;
     g.attributes.nearArea.needsUpdate = true;
     g.attributes.farArea.needsUpdate = true;
-    g.attributes.centroidPos.needsUpdate = true;
-    g.attributes.beamRadius.needsUpdate = true;
     g.index.needsUpdate = true;
     g.setDrawRange(0, idxIdx);
     g.computeBoundingSphere();
@@ -408,8 +397,7 @@ export class RasterizedVolumetricRenderer {
     u.forwardScatterBias.value = p.forwardScatterBias;
     u.intensity.value = Math.max(0, p.intensity);
     u.beamPower.value = Math.max(0, p.injectionIntensity);
-    u.numRays.value = Math.max(1, this._reflectedCount);
-    u.pipeSoftness.value = Math.max(0, p.pipeSoftness);
+    u.numRays.value = Math.max(1, this._beamRayCount);
 
     const scale = qualityScale(p.reducedResolutionMode);
     if (Math.abs(scale - this._currentScale) > 1e-6) {
@@ -419,16 +407,26 @@ export class RasterizedVolumetricRenderer {
 
   // ── Render ─────────────────────────────────────────────────────────
 
-  render(renderer, opticsState) {
+  render(renderer, opticsState, depthScene = null) {
     this.buildGeometry(opticsState);
     this.updateUniforms();
 
     const prevClearColor = renderer.getClearColor(new THREE.Color());
     const prevClearAlpha = renderer.getClearAlpha();
+    const prevOverride = depthScene ? depthScene.overrideMaterial : null;
 
     renderer.setRenderTarget(this.renderTarget);
     renderer.setClearColor(this._clearColor, 0);
     renderer.clear();
+
+    // Populate depth in this target so beam fragments are properly occluded
+    // by opaque scene geometry (e.g. floor, sheet, rig).
+    if (depthScene) {
+      depthScene.overrideMaterial = this._depthPrepassMaterial;
+      renderer.render(depthScene, this.camera);
+      depthScene.overrideMaterial = prevOverride;
+    }
+
     renderer.render(this._scene, this.camera);
     renderer.setRenderTarget(null);
 
@@ -441,6 +439,7 @@ export class RasterizedVolumetricRenderer {
 
   dispose() {
     this.material.dispose();
+    this._depthPrepassMaterial.dispose();
     this.geometry.dispose();
     this.renderTarget.dispose();
   }

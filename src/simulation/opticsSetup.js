@@ -22,7 +22,9 @@ export function rebuildRestBeam(params, opticsState) {
   const h = params.geometry.sheetHeight;
   const uCount = Math.max(2, Math.floor(params.optics.sampleCountU));
   const vCount = Math.max(2, Math.floor(params.optics.sampleCountV));
-  const randomize = !!params.optics.randomizeWithinCell;
+  // Rasterized pipes need grid-aligned rays so square prisms tile without gaps
+  const rasterizedPipes = params.volumetrics?.volumetricMode === "rasterized";
+  const randomize = !rasterizedPipes && !!params.optics.randomizeWithinCell;
   const jitterAmount = Math.max(0, Math.min(1, params.optics.randomJitterAmount ?? 1));
   const coverage = Math.max(0, Math.min(1, (params.optics.coveragePercent ?? 100) / 100));
   // Coverage is measured bottom-up: 0% = only the bottom edge, 100% = full sheet to the top.

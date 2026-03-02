@@ -117,9 +117,6 @@ export const defaultVolumetricParams = {
   intensity: 5.8,
   compositeOpacity: 0.75,
 
-  pipeOversize: 2.5,
-  pipeSoftness: 3.0,
-
   showBounds: false,
   showSlice: false,
   sliceAxis: "xz",

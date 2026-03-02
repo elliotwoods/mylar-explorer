@@ -107,12 +107,6 @@ export function createVolumetricControls(gui, params, hooks, statsModel) {
   add(optics, params.volumetrics, "intensity", "Volumetric Intensity", "Final volumetric brightness multiplier.", 0, 20, 0.01);
   add(optics, params.volumetrics, "compositeOpacity", "Composite Opacity", "Composite strength over scene color.", 0, 1.5, 0.01);
 
-  // ── Rasterized pipe settings (rasterized only) ──────────────────
-  const pipes = folder.addFolder("Pipe Geometry");
-  add(pipes, params.volumetrics, "pipeOversize", "Oversize", "Scale prisms outward from centroid for softer overlap.", 1, 6, 0.1);
-  add(pipes, params.volumetrics, "pipeSoftness", "Softness", "Gaussian falloff exponent across pipe diameter.", 0.5, 10, 0.1);
-  add(pipes, params.volumetrics, "maxBeamDistance", "Max Beam Distance (m)", "Max reflected ray travel distance.", 1, 40, 0.1);
-
   // ── Slice viewer (raymarched only) ───────────────────────────────
   const slice = folder.addFolder("Slice Viewer");
   add(slice, params.volumetrics, "showSlice", "Show Slice", "Show a debug slice through the froxel volume.");
@@ -138,15 +132,11 @@ export function createVolumetricControls(gui, params, hooks, statsModel) {
   // Folders that only apply to one mode are shown/hidden when
   // the volume method changes.
   const raymarchOnlyFolders = [presetsFolder, bounds, volume, inject, march, slice];
-  const rasterizedOnlyFolders = [pipes];
 
   function syncModeVisibility() {
     const isRasterized = params.volumetrics.volumetricMode === "rasterized";
     for (const f of raymarchOnlyFolders) {
       f.domElement.style.display = isRasterized ? "none" : "";
-    }
-    for (const f of rasterizedOnlyFolders) {
-      f.domElement.style.display = isRasterized ? "" : "none";
     }
     hooks.onVolumetricConfigChange();
   }

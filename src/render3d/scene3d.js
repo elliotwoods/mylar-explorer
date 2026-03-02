@@ -378,7 +378,7 @@ export async function create3DScene(canvas, params) {
     if (pipe.uShowVolumetric.value > 0 && params.volumetrics.enabled) {
       if (isRasterized) {
         pipe.volumetricTexNode.value = pipe.rasterizedRenderer.texture;
-        pipe.rasterizedRenderer.render(pipe.renderer, opticsState);
+        pipe.rasterizedRenderer.render(pipe.renderer, opticsState, scene);
       } else if (volumetricState.volumeTexture) {
         pipe.volumetricTexNode.value = pipe.raymarchedRenderer.texture;
         pipe.raymarchedRenderer.render(pipe.renderer);
