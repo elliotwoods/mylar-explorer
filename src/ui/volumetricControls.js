@@ -120,13 +120,21 @@ export function createVolumetricControls(gui, params, hooks, statsModel) {
   const stats = folder.addFolder("Volumetric Stats");
   stats.add(statsModel, "enabled").name("Enabled").listen();
   stats.add(statsModel, "webgl2Ready").name("GPU Ready").listen();
+  stats.add(statsModel, "injectionBackend").name("Injection Backend").listen();
+  stats.add(statsModel, "cpuFallbackActive").name("CPU Fallback").listen();
   stats.add(statsModel, "validReflectedRays").name("Valid Reflected Rays").listen();
   stats.add(statsModel, "injectedRays").name("Injected Rays").listen();
   stats.add(statsModel, "averageHitFraction").name("Avg Hit Fraction").listen();
   stats.add(statsModel, "volumeResolution").name("Volume Resolution").listen();
+  stats.add(statsModel, "computeClearMs").name("Clear Dispatch ms").listen();
+  stats.add(statsModel, "computeInjectMs").name("Inject Dispatch ms").listen();
+  stats.add(statsModel, "computeResolveMs").name("Resolve Dispatch ms").listen();
+  stats.add(statsModel, "computeCopyMs").name("Copy Dispatch ms").listen();
+  stats.add(statsModel, "computeTotalMs").name("Total Dispatch ms").listen();
   stats.add(statsModel, "raymarchSteps").name("Raymarch Steps").listen();
   stats.add(statsModel, "frameMs").name("Frame ms").listen();
   stats.add(statsModel, "fps").name("FPS").listen();
+  stats.open();
 
   // ── Mode-dependent visibility ────────────────────────────────────
   // Folders that only apply to one mode are shown/hidden when

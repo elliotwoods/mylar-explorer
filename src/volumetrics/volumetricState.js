@@ -6,10 +6,17 @@ function makeStats() {
   return {
     enabled: true,
     webgl2Ready: true,
+    injectionBackend: "CPU",
+    cpuFallbackActive: true,
     validReflectedRays: 0,
     injectedRays: 0,
     averageHitFraction: "0.0%",
     volumeResolution: "120x68x48",
+    computeClearMs: "0.00",
+    computeInjectMs: "0.00",
+    computeResolveMs: "0.00",
+    computeCopyMs: "0.00",
+    computeTotalMs: "0.00",
     raymarchSteps: 0,
     frameMs: "0.0",
     fps: "0.0"
@@ -28,6 +35,7 @@ export function createVolumetricState(params) {
     volumeData,
     historyData,
     volumeTexture,
+    gpuResetRequested: true,
     frameIndex: 0,
     boundsMin: new THREE.Vector3(),
     boundsMax: new THREE.Vector3(),
@@ -51,12 +59,14 @@ export function ensureVolumetricBuffers(state, params) {
   state.historyData = new Float32Array(voxelCount);
   disposeVolumeTexture(state.volumeTexture);
   state.volumeTexture = createVolumeTexture(state.volumeData, nextResolution);
+  state.gpuResetRequested = true;
   return true;
 }
 
 export function resetVolumetricHistory(state) {
   state.volumeData.fill(0);
   state.historyData.fill(0);
+  state.gpuResetRequested = true;
   if (state.volumeTexture) {
     state.volumeTexture.dispose();
     state.volumeTexture.needsUpdate = true;
@@ -66,4 +76,3 @@ export function resetVolumetricHistory(state) {
 export function disposeVolumetricState(state) {
   disposeVolumeTexture(state.volumeTexture);
 }
-

@@ -3,6 +3,7 @@ import { clamp, estimateFrequencyFromZeroCrossings } from "../utils/math.js";
 const OSC_WINDOW_SECONDS_DEFAULT = 2.0;
 const OSC_WINDOW_SECONDS_MIN = 0.2;
 const OSC_WINDOW_SECONDS_MAX = 18.0;
+const TOP_ROW_SPLIT = 0.78;
 
 function formatNumber(value, digits = 2) {
   if (!Number.isFinite(value)) return "--";
@@ -12,6 +13,24 @@ function formatNumber(value, digits = 2) {
 function formatSigned(value, digits = 2) {
   if (!Number.isFinite(value)) return "--";
   return `${value >= 0 ? "+" : ""}${value.toFixed(digits)}`;
+}
+
+function drawBadge(ctx, text, x, y, align = "left") {
+  const padX = 5;
+  const width = ctx.measureText(text).width;
+  const boxW = width + padX * 2;
+  const boxH = 14;
+  const bx = align === "right" ? x - boxW : x;
+  const by = y;
+  ctx.fillStyle = "rgba(6,10,16,0.72)";
+  ctx.fillRect(bx, by, boxW, boxH);
+  ctx.fillStyle = "#dbe7f8";
+  ctx.fillText(text, bx + padX, by + 11);
+  return { x: bx, y: by, w: boxW, h: boxH };
+}
+
+function overlaps(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
 
 function niceStep(rawStep) {
@@ -95,9 +114,9 @@ function drawAxes(ctx, rect, xMin, xMax, yMin, yMax, xSuffix = "s", ySuffix = ""
 function drawSeries(ctx, x, y, w, h, times, values, color, label, unit, showMetrics, windowSeconds, emphasizeWindow) {
   if (values.length < 2 || !times.length || times.length !== values.length) return;
   const leftPad = 38;
-  const rightPad = 8;
-  const topPad = 4;
-  const bottomPad = 12;
+  const rightPad = 6;
+  const topPad = 2;
+  const bottomPad = 10;
   const plot = {
     x: x + leftPad,
     y: y + topPad,
@@ -148,13 +167,20 @@ function drawSeries(ctx, x, y, w, h, times, values, color, label, unit, showMetr
   }
   ctx.stroke();
 
-  ctx.fillStyle = color;
-  ctx.fillText(label, x + 6, y + 13);
+  const titleRect = (() => {
+    ctx.fillStyle = color;
+    return drawBadge(ctx, label, x + 4, y + 2, "left");
+  })();
   if (showMetrics) {
-    const metricText = `A=${formatNumber(windowMetrics.amplitude, 3)} ${unit}  f=${formatNumber(windowMetrics.hz, 2)} Hz`;
+    const metricText = `A ${formatNumber(windowMetrics.amplitude, 3)}${unit}  f ${formatNumber(windowMetrics.hz, 2)}Hz`;
     ctx.fillStyle = "#c7d3e3";
-    const textWidth = ctx.measureText(metricText).width;
-    ctx.fillText(metricText, x + w - textWidth - 8, y + 13);
+    let metricRect = drawBadge(ctx, metricText, x + w - 4, y + 2, "right");
+    if (overlaps(metricRect, titleRect)) {
+      metricRect = drawBadge(ctx, metricText, x + w - 4, y + 18, "right");
+      if (overlaps(metricRect, titleRect)) {
+        drawBadge(ctx, metricText, x + w - 4, y + h - 18, "right");
+      }
+    }
   }
 }
 
@@ -299,8 +325,7 @@ export function createPlots(canvas, params) {
     interaction.latestTimes = state.history.time || [];
     interaction.latestPanels = [];
 
-    const split = 0.68; // Give the top oscilloscope row more vertical space.
-    const topH = Math.max(80, Math.floor(h * split));
+    const topH = Math.max(90, Math.floor(h * TOP_ROW_SPLIT));
     const bottomH = Math.max(40, h - topH);
     const seriesDefs = [
       { key: "bottomX", color: "#83d8ff", label: "bottom x", unit: "m", showMetrics: true },

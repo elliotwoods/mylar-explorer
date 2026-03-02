@@ -7,7 +7,7 @@ import { createPersonActor } from "./personActor.js";
 import { setupEnvironment } from "./environment.js";
 import { createSpotlightRays } from "./spotlightRays.js";
 import { createVolumetricDebug } from "./volumetricDebug.js";
-import { injectReflectedBeamsGPU } from "../volumetrics/beamInjectionGPU.js";
+import { injectReflectedBeamsGPU, disposeBeamInjectionGPU } from "../volumetrics/beamInjectionGPU.js";
 import { injectReflectedBeamsCPU } from "../volumetrics/beamInjectionCPU.js";
 import { getVolumetricBounds } from "../volumetrics/volumetricBounds.js";
 import {
@@ -294,6 +294,7 @@ export async function create3DScene(canvas, params) {
     stats.raymarchSteps = isRasterized ? "n/a" : Math.max(1, Math.floor(params.volumetrics.raymarchStepCount));
     stats.frameMs = `${(Math.max(0, frameDt) * 1000).toFixed(1)}`;
     stats.fps = `${(1 / Math.max(1e-4, frameDt)).toFixed(1)}`;
+    stats.webgl2Ready = !!pipe.renderer?.backend?.isWebGPUBackend;
 
     const resized = ensureVolumetricBuffers(volumetricState, params);
     if (resized) {
@@ -308,8 +309,15 @@ export async function create3DScene(canvas, params) {
     volumetricDebug.updateBounds(volumetricState.boundsMin, volumetricState.boundsMax, params.volumetrics.showBounds);
 
     if (!params.volumetrics.enabled) {
+      stats.injectionBackend = "Disabled";
+      stats.cpuFallbackActive = false;
       stats.validReflectedRays = 0;
       stats.injectedRays = 0;
+      stats.computeClearMs = "0.00";
+      stats.computeInjectMs = "0.00";
+      stats.computeResolveMs = "0.00";
+      stats.computeCopyMs = "0.00";
+      stats.computeTotalMs = "0.00";
       volumetricDebug.updateSlice(params, volumetricState.boundsMin, volumetricState.boundsMax, null);
       return;
     }
@@ -317,15 +325,20 @@ export async function create3DScene(canvas, params) {
     // Rasterized mode skips beam injection and 3D texture entirely
     if (!isRasterized) {
       const usedGpuInjection = injectReflectedBeamsGPU({
+        renderer: pipe.renderer,
         params,
         opticsState,
-        volumeData: volumetricState.volumeData,
+        volumetricState,
         resolution: volumetricState.resolution,
         boundsMin: volumetricState.boundsMin,
         boundsMax: volumetricState.boundsMax,
         stats
       });
       if (!usedGpuInjection) {
+        const tCpu0 = performance.now();
+        // CPU path always injects into a per-frame buffer; clear/history behavior
+        // is composed afterwards in applyTemporalAccumulation().
+        volumetricState.volumeData.fill(0);
         injectReflectedBeamsCPU({
           params,
           opticsState,
@@ -335,19 +348,32 @@ export async function create3DScene(canvas, params) {
           boundsMax: volumetricState.boundsMax,
           stats
         });
+        applyTemporalAccumulation(volumetricState.volumeData, volumetricState.historyData, params);
+        volumetricState.volumeTexture.dispose();
+        volumetricState.volumeTexture.needsUpdate = true;
+        const tCpu1 = performance.now();
+        stats.injectionBackend = "CPU";
+        stats.cpuFallbackActive = true;
+        stats.computeClearMs = "0.00";
+        stats.computeInjectMs = `${Math.max(0, tCpu1 - tCpu0).toFixed(2)}`;
+        stats.computeResolveMs = "0.00";
+        stats.computeCopyMs = "0.00";
+        stats.computeTotalMs = stats.computeInjectMs;
       }
 
-      applyTemporalAccumulation(volumetricState.volumeData, volumetricState.historyData, params);
-
-      volumetricState.volumeTexture.dispose();
-      volumetricState.volumeTexture.needsUpdate = true;
       volumetricState.frameIndex += 1;
-
       updatePrimaryLightDirection();
     } else {
       // For rasterized, still report reflected ray count for diagnostics
+      stats.injectionBackend = "Rasterized";
+      stats.cpuFallbackActive = false;
       stats.validReflectedRays = opticsState?.runtime?.reflectedRayCount ?? 0;
       stats.injectedRays = stats.validReflectedRays;
+      stats.computeClearMs = "n/a";
+      stats.computeInjectMs = "n/a";
+      stats.computeResolveMs = "n/a";
+      stats.computeCopyMs = "n/a";
+      stats.computeTotalMs = "n/a";
     }
 
     volumetricDebug.updateSlice(
@@ -454,6 +480,7 @@ export async function create3DScene(canvas, params) {
       sheet.dispose();
       person.dispose();
       volumetricDebug.dispose();
+      disposeBeamInjectionGPU(pipe.renderer);
       disposeVolumetricState(volumetricState);
       pipe.dispose();
     }

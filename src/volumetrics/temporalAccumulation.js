@@ -1,44 +1,35 @@
 import { clamp } from "./volumetricMath.js";
 
 /**
- * Combined decay + temporal accumulation in a single pass.
- * When temporal accumulation is disabled, applies simple decay and copies to history.
- * When enabled, blends injected data with decayed history in one loop.
+ * Compose per-frame injected volume with persistent history.
  *
- * @param {boolean} preDecayed - true if the caller already applied decay before
- *   injection (legacy path). When false, decay is folded into this pass.
+ * Rules:
+ * - clearEachFrame=true  => frame base starts from 0
+ * - clearEachFrame=false => frame base starts from previous history
+ * - temporalAccumulation=true  => blend frame value with decayed history
+ * - temporalAccumulation=false => use frame value directly
  */
-export function applyTemporalAccumulation(volumeData, historyData, params, { preDecayed = false } = {}) {
+export function applyTemporalAccumulation(volumeData, historyData, params) {
   if (!volumeData || !historyData || volumeData.length !== historyData.length) return;
 
   const len = volumeData.length;
+  const clearEachFrame = !!params.volumetrics.clearEachFrame;
+  const temporalAccumulation = !!params.volumetrics.temporalAccumulation;
   const decay = clamp(params.volumetrics.temporalDecay, 0, 0.9999);
-
-  if (!params.volumetrics.temporalAccumulation) {
-    // Simple decay path — no blending with history
-    if (preDecayed) {
-      // Caller already decayed; just mirror to history
-      historyData.set(volumeData);
-    } else {
-      // Apply decay to any existing energy, add freshly injected energy
-      for (let i = 0; i < len; i++) {
-        const v = historyData[i] * decay + volumeData[i];
-        historyData[i] = v;
-        volumeData[i] = v;
-      }
-    }
-    return;
-  }
-
-  // Full temporal accumulation: blend decayed history with injected data
   const blend = clamp(params.volumetrics.temporalBlend, 0, 1);
   const oneMinusBlend = 1 - blend;
 
-  for (let i = 0; i < len; i++) {
-    const accumulated = historyData[i] * decay;
+  for (let i = 0; i < len; i += 1) {
     const injected = volumeData[i];
-    const mixed = accumulated * oneMinusBlend + injected * blend;
-    historyData[i] = mixed;
-    volumeData[i] = mixed;
+    const previous = historyData[i];
+    const base = clearEachFrame ? 0 : previous;
+    const frameValue = base + injected;
+
+    const nextValue = temporalAccumulation
+      ? previous * decay * oneMinusBlend + frameValue * blend
+      : frameValue;
+
+    historyData[i] = nextValue;
+    volumeData[i] = nextValue;
   }
 }

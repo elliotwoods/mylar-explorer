@@ -18,10 +18,6 @@ const _kernelWeightsX = new Float32Array(5);
 const _kernelWeightsY = new Float32Array(5);
 const _kernelWeightsZ = new Float32Array(5);
 
-function clearVolume(volumeData) {
-  volumeData.fill(0);
-}
-
 function depositNearest(volumeData, resolution, gx, gy, gz, energy) {
   const ix = clamp(Math.round(gx), 0, resolution.x - 1);
   const iy = clamp(Math.round(gy), 0, resolution.y - 1);
@@ -146,7 +142,6 @@ export function injectReflectedBeamsCPU({
   stats
 }) {
   if (!volumeData || !opticsState?.runtime) return;
-  if (params.volumetrics.clearEachFrame || params.volumetrics.temporalAccumulation) clearVolume(volumeData);
 
   const reflectedSamples = opticsState.runtime.reflectedRaySamples;
   const reflectedCount = opticsState.runtime.reflectedRayCount || 0;
