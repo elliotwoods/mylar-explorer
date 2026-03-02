@@ -20,7 +20,6 @@ export const VOLUMETRIC_LOOK_PRESETS = {
     params.extinctionCoeff = 0.25;
     params.anisotropy = 0.2;
     params.beamStepSize = 0.45;
-    params.depositionRadius = 0.2;
     params.raymarchStepCount = 56;
   },
   "Strong theatrical haze": (params) => {
@@ -32,13 +31,11 @@ export const VOLUMETRIC_LOOK_PRESETS = {
     params.extinctionCoeff = 0.65;
     params.anisotropy = 0.58;
     params.beamStepSize = 0.3;
-    params.depositionRadius = 0.32;
     params.raymarchStepCount = 88;
   },
   "Tight concentrated beams": (params) => {
     params.injectionIntensity = 1.25;
     params.beamStepSize = 0.28;
-    params.depositionRadius = 0.08;
     params.scatteringCoeff = 1.05;
     params.extinctionCoeff = 0.4;
     params.anisotropy = 0.65;
@@ -47,7 +44,6 @@ export const VOLUMETRIC_LOOK_PRESETS = {
   "Soft dispersed beams": (params) => {
     params.injectionIntensity = 0.85;
     params.beamStepSize = 0.45;
-    params.depositionRadius = 0.38;
     params.scatteringCoeff = 0.8;
     params.extinctionCoeff = 0.25;
     params.anisotropy = 0.28;
@@ -58,7 +54,6 @@ export const VOLUMETRIC_LOOK_PRESETS = {
     params.reducedResolutionMode = "quarter";
     params.raymarchStepCount = 40;
     params.beamStepSize = 0.55;
-    params.depositionRadius = 0.18;
     params.temporalAccumulation = true;
     params.temporalDecay = 0.95;
     params.temporalBlend = 0.35;
@@ -68,7 +63,6 @@ export const VOLUMETRIC_LOOK_PRESETS = {
     params.reducedResolutionMode = "half";
     params.raymarchStepCount = 108;
     params.beamStepSize = 0.26;
-    params.depositionRadius = 0.28;
     params.temporalAccumulation = true;
     params.temporalDecay = 0.97;
     params.temporalBlend = 0.45;
@@ -101,12 +95,8 @@ export const defaultVolumetricParams = {
   temporalBlend: 0.05,
 
   beamStepSize: 0.12,
-  depositionRadius: 0.08,
-  depositionCountX: 1,
-  depositionCountY: 1,
-  depositionCountZ: 1,
+  pairInjectionScope: "reflected",
   injectionIntensity: 4,
-  injectIncidentRays: true,
   maxBeamDistance: 18,
 
   raymarchStepCount: 83,

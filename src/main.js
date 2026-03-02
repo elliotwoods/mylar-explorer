@@ -85,6 +85,30 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+function sanitizeRuntimeControls() {
+  const pausedValue = params.display.paused;
+  if (typeof pausedValue !== "boolean") {
+    if (pausedValue === "true" || pausedValue === 1) params.display.paused = true;
+    else if (pausedValue === "false" || pausedValue === 0 || pausedValue == null) params.display.paused = false;
+    else params.display.paused = !!pausedValue;
+  }
+
+  const simSpeed = Number(params.display.simSpeed);
+  params.display.simSpeed = Number.isFinite(simSpeed)
+    ? Math.max(0.0625, Math.min(16, simSpeed))
+    : 1;
+
+  const fixedDt = Number(params.physics.fixedDt);
+  params.physics.fixedDt = Number.isFinite(fixedDt) && fixedDt > 0
+    ? Math.max(1 / 1000, Math.min(1 / 60, fixedDt))
+    : 1 / 240;
+
+  const substeps = Number(params.physics.maxSubStepsPerFrame);
+  params.physics.maxSubStepsPerFrame = Number.isFinite(substeps)
+    ? Math.max(1, Math.min(30, Math.floor(substeps)))
+    : 10;
+}
+
 function onManualPointerMove(event) {
   if (!params.drive.manualOverrideEnabled) {
     manualMouse.prevX = event.clientX;
@@ -141,6 +165,9 @@ function updateManualOverrideDecay(frameDt, nowMs) {
 }
 
 function hardResetSimulation() {
+  sanitizeRuntimeControls();
+  // Reset should always resume simulation progression.
+  params.display.paused = false;
   model.reset();
   scene3d.rebuildRigGeometry();
   scene3d.rebuildSheetGeometry();
@@ -249,6 +276,7 @@ function applyParamSnapshot(snapshot) {
   if (opticsSnapshot) Object.assign(params.optics, opticsSnapshot);
   if (snapshot.volumetrics) Object.assign(params.volumetrics, snapshot.volumetrics);
 
+  sanitizeRuntimeControls();
   hardResetSimulation();
   scene3d.updateMaterialParams();
   scene3d.updateOpticsStyle();
@@ -336,6 +364,7 @@ function frame(now) {
     controls.refresh();
     manualDriveUiDirty = false;
   }
+  sanitizeRuntimeControls();
   accumulator += frameDt * params.display.simSpeed;
   updatePauseButtonLabel();
 

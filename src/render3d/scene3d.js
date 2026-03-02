@@ -311,6 +311,9 @@ export async function create3DScene(canvas, params) {
       stats.cpuFallbackActive = false;
       stats.validReflectedRays = 0;
       stats.injectedRays = 0;
+      stats.pairCountReflected = 0;
+      stats.pairCountIncident = 0;
+      stats.pairCountInjected = 0;
       stats.computeClearMs = "0.00";
       stats.computeInjectMs = "0.00";
       stats.computeResolveMs = "0.00";
@@ -337,6 +340,9 @@ export async function create3DScene(canvas, params) {
         stats.cpuFallbackActive = false;
         stats.validReflectedRays = opticsState?.runtime?.reflectedRayCount ?? 0;
         stats.injectedRays = 0;
+        stats.pairCountReflected = 0;
+        stats.pairCountIncident = 0;
+        stats.pairCountInjected = 0;
       }
 
       volumetricState.frameIndex += 1;
@@ -347,6 +353,9 @@ export async function create3DScene(canvas, params) {
       stats.cpuFallbackActive = false;
       stats.validReflectedRays = opticsState?.runtime?.reflectedRayCount ?? 0;
       stats.injectedRays = stats.validReflectedRays;
+      stats.pairCountReflected = 0;
+      stats.pairCountIncident = 0;
+      stats.pairCountInjected = 0;
       stats.computeClearMs = "n/a";
       stats.computeInjectMs = "n/a";
       stats.computeResolveMs = "n/a";
