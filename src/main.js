@@ -234,12 +234,19 @@ function dismissSweep() {
 
 function applyParamSnapshot(snapshot) {
   if (!snapshot) return;
+  const displaySnapshot = snapshot.display ? { ...snapshot.display } : null;
+  const opticsSnapshot = snapshot.optics ? { ...snapshot.optics } : null;
+  if (opticsSnapshot?.floorY != null && (displaySnapshot?.floorY == null)) {
+    displaySnapshot.floorY = opticsSnapshot.floorY;
+  }
+  if (opticsSnapshot) delete opticsSnapshot.floorY;
+
   if (snapshot.geometry) Object.assign(params.geometry, snapshot.geometry);
   if (snapshot.drive) Object.assign(params.drive, snapshot.drive);
   if (snapshot.physics) Object.assign(params.physics, snapshot.physics);
-  if (snapshot.display) Object.assign(params.display, snapshot.display);
+  if (displaySnapshot) Object.assign(params.display, displaySnapshot);
   if (snapshot.scan) Object.assign(params.scan, snapshot.scan);
-  if (snapshot.optics) Object.assign(params.optics, snapshot.optics);
+  if (opticsSnapshot) Object.assign(params.optics, opticsSnapshot);
   if (snapshot.volumetrics) Object.assign(params.volumetrics, snapshot.volumetrics);
 
   hardResetSimulation();
@@ -257,7 +264,11 @@ const toolbar = createToolbar({
     physics: structuredClone(params.physics),
     display: structuredClone(params.display),
     scan: structuredClone(params.scan),
-    optics: structuredClone(params.optics),
+    optics: (() => {
+      const optics = structuredClone(params.optics);
+      delete optics.floorY;
+      return optics;
+    })(),
     volumetrics: structuredClone(params.volumetrics),
     cameraPose: scene3d.getCameraPose()
   }),

@@ -1,7 +1,9 @@
 import * as THREE from "three/webgpu";
 import {
   Fn,
+  Loop,
   If,
+  Break,
   Return,
   uniform,
   float,
@@ -29,6 +31,7 @@ import {
 
 const INJECTOR_BY_RENDERER = new WeakMap();
 const ATOMIC_SCALE = 8192;
+const MAX_DEPOSITION_COUNT = 9;
 
 function formatMs(ms) {
   return `${Math.max(0, ms).toFixed(2)}`;
@@ -58,8 +61,8 @@ function chooseDepositionMode(params, boundsMin, boundsMax, resolution) {
   const minVoxel = Math.max(1e-6, Math.min(voxelX, voxelY, voxelZ));
 
   if (radiusMeters <= 1e-4) return 0;
-  // Keep the heavy wide-kernel path for clearly large radii only.
-  if (radiusMeters > minVoxel * 1.0) return 2;
+  // Keep the looped wide-kernel path for clearly large radii only.
+  if (radiusMeters > minVoxel * 1.5) return 2;
   return 1;
 }
 
@@ -102,6 +105,9 @@ class WebGPUBeamInjector {
       injectionIntensity: uniform(1.0),
       depositionRadius: uniform(0.08),
       depositionMode: uniform(1, "int"),
+      depositionCountX: uniform(1, "int"),
+      depositionCountY: uniform(1, "int"),
+      depositionCountZ: uniform(1, "int"),
       temporalAccum: uniform(1, "int"),
       temporalDecay: uniform(0.9),
       temporalBlend: uniform(0.4),
@@ -368,30 +374,45 @@ class WebGPUBeamInjector {
         splatNearestIfInside(gridPos.x, gridPos.y, gridPos.z, energyPerStep);
       }).Else(() => {
         If(u.depositionMode.equal(int(2)), () => {
-          // Lightweight large-radius kernel with bounded tap count.
+          // Large-radius deposition with configurable tap counts.
           const radiusGridX = u.depositionRadius.mul(float(resXm1)).div(boundsSize.x);
           const radiusGridY = u.depositionRadius.mul(float(resYm1)).div(boundsSize.y);
           const radiusGridZ = u.depositionRadius.mul(float(resZm1)).div(boundsSize.z);
 
-          const centerEnergy = energyPerStep.mul(float(0.55));
-          const axisEnergy = energyPerStep.mul(float(0.075));
-          const axisScale = float(0.85);
-          const axisScaleN = axisScale.negate();
+          const depX = max(int(1), u.depositionCountX);
+          const depY = max(int(1), u.depositionCountY);
+          const depZ = max(int(1), u.depositionCountZ);
+          const tapCount = max(int(1), depX.mul(depY).mul(depZ));
+          const tapEnergy = energyPerStep.div(float(tapCount));
 
-          const xPos = gridPos.x.add(radiusGridX.mul(axisScale));
-          const xNeg = gridPos.x.add(radiusGridX.mul(axisScaleN));
-          const yPos = gridPos.y.add(radiusGridY.mul(axisScale));
-          const yNeg = gridPos.y.add(radiusGridY.mul(axisScaleN));
-          const zPos = gridPos.z.add(radiusGridZ.mul(axisScale));
-          const zNeg = gridPos.z.add(radiusGridZ.mul(axisScaleN));
+          const centerX = float(depX.sub(int(1))).mul(float(0.5));
+          const centerY = float(depY.sub(int(1))).mul(float(0.5));
+          const centerZ = float(depZ.sub(int(1))).mul(float(0.5));
+          const halfSpanX = max(float(1), centerX);
+          const halfSpanY = max(float(1), centerY);
+          const halfSpanZ = max(float(1), centerZ);
 
-          splatNearestIfInside(gridPos.x, gridPos.y, gridPos.z, centerEnergy);
-          splatNearestIfInside(xPos, gridPos.y, gridPos.z, axisEnergy);
-          splatNearestIfInside(xNeg, gridPos.y, gridPos.z, axisEnergy);
-          splatNearestIfInside(gridPos.x, yPos, gridPos.z, axisEnergy);
-          splatNearestIfInside(gridPos.x, yNeg, gridPos.z, axisEnergy);
-          splatNearestIfInside(gridPos.x, gridPos.y, zPos, axisEnergy);
-          splatNearestIfInside(gridPos.x, gridPos.y, zNeg, axisEnergy);
+          Loop(MAX_DEPOSITION_COUNT, ({ i }) => {
+            const ix = int(i);
+            If(ix.greaterThanEqual(depX), () => { Break(); });
+            const offX = float(ix).sub(centerX).div(halfSpanX);
+            const gx = gridPos.x.add(radiusGridX.mul(offX));
+
+            Loop(MAX_DEPOSITION_COUNT, ({ i }) => {
+              const iy = int(i);
+              If(iy.greaterThanEqual(depY), () => { Break(); });
+              const offY = float(iy).sub(centerY).div(halfSpanY);
+              const gy = gridPos.y.add(radiusGridY.mul(offY));
+
+              Loop(MAX_DEPOSITION_COUNT, ({ i }) => {
+                const iz = int(i);
+                If(iz.greaterThanEqual(depZ), () => { Break(); });
+                const offZ = float(iz).sub(centerZ).div(halfSpanZ);
+                const gz = gridPos.z.add(radiusGridZ.mul(offZ));
+                splatNearestIfInside(gx, gy, gz, tapEnergy);
+              });
+            });
+          });
         }).Else(() => {
           splatTrilinearIfInside(gridPos.x, gridPos.y, gridPos.z, energyPerStep);
         });
@@ -534,6 +555,9 @@ class WebGPUBeamInjector {
       u.injectionIntensity.value = Math.max(0, params.volumetrics.injectionIntensity);
       u.depositionRadius.value = Math.max(0, params.volumetrics.depositionRadius);
       u.depositionMode.value = depositionMode;
+      u.depositionCountX.value = Math.max(1, Math.min(MAX_DEPOSITION_COUNT, Math.floor(params.volumetrics.depositionCountX ?? 1)));
+      u.depositionCountY.value = Math.max(1, Math.min(MAX_DEPOSITION_COUNT, Math.floor(params.volumetrics.depositionCountY ?? 1)));
+      u.depositionCountZ.value = Math.max(1, Math.min(MAX_DEPOSITION_COUNT, Math.floor(params.volumetrics.depositionCountZ ?? 1)));
       u.temporalAccum.value = params.volumetrics.temporalAccumulation ? 1 : 0;
       u.temporalDecay.value = Math.max(0, Math.min(0.9999, params.volumetrics.temporalDecay));
       u.temporalBlend.value = Math.max(0, Math.min(1, params.volumetrics.temporalBlend));

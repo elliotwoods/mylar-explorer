@@ -12,7 +12,6 @@ export const defaultOpticsParams = {
   reflectedLength: 8,
   missLength: 7,
   missToFloorEnabled: false,
-  floorY: -6.4,
   fastIntersectionEnabled: true,
   incidentVisible: true,
   reflectedVisible: true,

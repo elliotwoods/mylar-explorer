@@ -12,7 +12,7 @@ export function createOpticsControls(gui, params, hooks, statsModel) {
   add(optics, params.optics, "sourceY", "Source Y (m)", "Spotlight point-source Y position.", -8, 2, 0.01).onFinishChange(hooks.onOpticsRebuild);
   add(optics, params.optics, "sourceZ", "Source Z (m)", "Spotlight point-source Z position.", -8, 8, 0.01).onFinishChange(hooks.onOpticsRebuild);
   add(optics, params.optics, "sampleCountU", "Samples U (Width)", "Beam samples across sheet width.", 2, 90, 1).onFinishChange(hooks.onOpticsRebuild);
-  add(optics, params.optics, "sampleCountV", "Samples V (Height)", "Beam samples along sheet height.", 2, 140, 1).onFinishChange(hooks.onOpticsRebuild);
+  add(optics, params.optics, "sampleCountV", "Samples V (Height)", "Beam samples along sheet height.", 2, 1024, 1).onFinishChange(hooks.onOpticsRebuild);
   add(
     optics,
     params.optics,
@@ -29,7 +29,6 @@ export function createOpticsControls(gui, params, hooks, statsModel) {
   add(optics, params.optics, "reflectedLength", "Reflected Length (m)", "Length of reflected segment visualization.", 0.2, 20, 0.1);
   add(optics, params.optics, "missLength", "Max Miss Distance (m)", "Maximum length when ray misses sheet.", 0.2, 40, 0.1);
   add(optics, params.optics, "missToFloorEnabled", "Miss Rays to Floor", "Clip misses at floor plane if they intersect.");
-  add(optics, params.optics, "floorY", "Floor Y (m)", "World Y of floor plane for miss clipping.", -20, 2, 0.05);
   add(optics, params.optics, "fastIntersectionEnabled", "Fast Intersections", "Use optimized strip intersection path.");
   add(optics, params.optics, "incidentVisible", "Show Incident Rays", "Show source-to-sheet incident segments.");
   add(optics, params.optics, "reflectedVisible", "Show Reflected Rays", "Show specular reflected segments.");

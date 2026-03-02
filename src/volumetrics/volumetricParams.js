@@ -102,6 +102,9 @@ export const defaultVolumetricParams = {
 
   beamStepSize: 0.12,
   depositionRadius: 0.08,
+  depositionCountX: 1,
+  depositionCountY: 1,
+  depositionCountZ: 1,
   injectionIntensity: 4,
   injectIncidentRays: true,
   maxBeamDistance: 18,

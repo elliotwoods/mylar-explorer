@@ -67,7 +67,8 @@ function missEndpoint(origin, dir, params) {
   if (params.optics.missToFloorEnabled) {
     const eps = 1e-7;
     if (Math.abs(dir.y) > eps) {
-      const floorT = (params.optics.floorY - origin.y) / dir.y;
+      const floorY = params.display?.floorY ?? -6.4;
+      const floorT = (floorY - origin.y) / dir.y;
       if (floorT > 0) t = Math.min(maxDist, floorT);
     }
   }

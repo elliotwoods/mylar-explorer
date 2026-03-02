@@ -78,9 +78,12 @@ export function createVolumetricControls(gui, params, hooks, statsModel) {
 
   // ── Beam injection (raymarched only) ─────────────────────────────
   const inject = folder.addFolder("Beam Injection");
-  add(inject, params.volumetrics, "beamStepSize", "Beam Step Size (m)", "Ray step length during CPU beam injection.", 0.05, 1.2, 0.01);
+  add(inject, params.volumetrics, "beamStepSize", "Beam Step Size (m)", "Ray step length for beam injection sampling.", 0.05, 1.2, 0.01);
   add(inject, params.volumetrics, "depositionRadius", "Deposition Radius (m)", "Energy splat radius in meters.", 0, 1.2, 0.01);
-  add(inject, params.volumetrics, "injectionIntensity", "Injection Intensity", "Per-ray deposited energy / beam power scale.", 0, 4, 0.01);
+  add(inject, params.volumetrics, "depositionCountX", "Depositions X", "Large-radius GPU deposition taps along X.", 1, 9, 1);
+  add(inject, params.volumetrics, "depositionCountY", "Depositions Y", "Large-radius GPU deposition taps along Y.", 1, 9, 1);
+  add(inject, params.volumetrics, "depositionCountZ", "Depositions Z", "Large-radius GPU deposition taps along Z.", 1, 9, 1);
+  add(inject, params.volumetrics, "injectionIntensity", "Injection Intensity", "Per-ray deposited energy / beam power scale.", 0, 16, 0.01);
   add(inject, params.volumetrics, "injectIncidentRays", "Inject Incident Rays", "Include source-to-mirror incoming rays in volumetric energy injection.");
   add(inject, params.volumetrics, "maxBeamDistance", "Max Beam Distance (m)", "Max reflected ray travel distance in volume.", 1, 40, 0.1);
 
