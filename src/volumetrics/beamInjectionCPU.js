@@ -11,6 +11,12 @@ const _pos = new THREE.Vector3();
 const _grid = new THREE.Vector3();
 const _isect = { tMin: 0, tMax: 0 };
 const _voxel = new THREE.Vector3();
+const _kernelCoordsX = new Int16Array(5);
+const _kernelCoordsY = new Int16Array(5);
+const _kernelCoordsZ = new Int16Array(5);
+const _kernelWeightsX = new Float32Array(5);
+const _kernelWeightsY = new Float32Array(5);
+const _kernelWeightsZ = new Float32Array(5);
 
 function clearVolume(volumeData) {
   volumeData.fill(0);
@@ -65,36 +71,68 @@ function depositSoftKernel(volumeData, resolution, gx, gy, gz, radiusCells, ener
   const sigmaY = Math.max(0.5, radiusCells.y);
   const sigmaZ = Math.max(0.5, radiusCells.z);
 
-  let weightSum = 0;
-  const contributions = [];
+  let xCount = 0;
+  let yCount = 0;
+  let zCount = 0;
+  let xWeightSum = 0;
+  let yWeightSum = 0;
+  let zWeightSum = 0;
+
+  for (let x = centerX - rx; x <= centerX + rx; x += 1) {
+    if (x < 0 || x >= resolution.x) continue;
+    const dx = (x - gx) / sigmaX;
+    const w = Math.exp(-0.5 * dx * dx);
+    _kernelCoordsX[xCount] = x;
+    _kernelWeightsX[xCount] = w;
+    xWeightSum += w;
+    xCount += 1;
+  }
+
+  for (let y = centerY - ry; y <= centerY + ry; y += 1) {
+    if (y < 0 || y >= resolution.y) continue;
+    const dy = (y - gy) / sigmaY;
+    const w = Math.exp(-0.5 * dy * dy);
+    _kernelCoordsY[yCount] = y;
+    _kernelWeightsY[yCount] = w;
+    yWeightSum += w;
+    yCount += 1;
+  }
 
   for (let z = centerZ - rz; z <= centerZ + rz; z += 1) {
     if (z < 0 || z >= resolution.z) continue;
-    for (let y = centerY - ry; y <= centerY + ry; y += 1) {
-      if (y < 0 || y >= resolution.y) continue;
-      for (let x = centerX - rx; x <= centerX + rx; x += 1) {
-        if (x < 0 || x >= resolution.x) continue;
-        const dx = (x - gx) / sigmaX;
-        const dy = (y - gy) / sigmaY;
-        const dz = (z - gz) / sigmaZ;
-        const w = Math.exp(-0.5 * (dx * dx + dy * dy + dz * dz));
-        weightSum += w;
-        contributions.push({
-          index: volumeGridToLinearIndex(x, y, z, resolution),
-          weight: w
-        });
-      }
-    }
+    const dz = (z - gz) / sigmaZ;
+    const w = Math.exp(-0.5 * dz * dz);
+    _kernelCoordsZ[zCount] = z;
+    _kernelWeightsZ[zCount] = w;
+    zWeightSum += w;
+    zCount += 1;
   }
 
-  if (weightSum < 1e-8) {
+  const weightSum = xWeightSum * yWeightSum * zWeightSum;
+  if (weightSum < 1e-8 || !xCount || !yCount || !zCount) {
     depositTrilinear(volumeData, resolution, gx, gy, gz, energy);
     return;
   }
-  const inv = 1 / weightSum;
-  for (let i = 0; i < contributions.length; i += 1) {
-    const c = contributions[i];
-    volumeData[c.index] += energy * c.weight * inv;
+
+  const scale = energy / weightSum;
+  const strideX = resolution.x;
+  const strideY = resolution.x * resolution.y;
+
+  for (let zi = 0; zi < zCount; zi += 1) {
+    const zCoord = _kernelCoordsZ[zi];
+    const wz = _kernelWeightsZ[zi];
+    const zBase = zCoord * strideY;
+
+    for (let yi = 0; yi < yCount; yi += 1) {
+      const yCoord = _kernelCoordsY[yi];
+      const wyz = _kernelWeightsY[yi] * wz;
+      const yzBase = zBase + yCoord * strideX;
+
+      for (let xi = 0; xi < xCount; xi += 1) {
+        const index = yzBase + _kernelCoordsX[xi];
+        volumeData[index] += scale * _kernelWeightsX[xi] * wyz;
+      }
+    }
   }
 }
 

@@ -164,7 +164,8 @@ export function updateOptics(params, opticsState, targetMesh, options = {}) {
     };
     return;
   }
-  if (!force && params.optics.freeze && opticsState.runtime.totalRays > 0) return;
+  const forceLiveRayDebug = !!(params.volumetrics?.enabled && params.volumetrics?.showRays);
+  if (!force && params.optics.freeze && opticsState.runtime.totalRays > 0 && !forceLiveRayDebug) return;
 
   const source = sourceFromParams(params);
   const rays = opticsState.rays;

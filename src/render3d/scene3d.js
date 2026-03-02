@@ -301,13 +301,6 @@ export async function create3DScene(canvas, params) {
       return;
     }
 
-    if (!params.volumetrics.clearEachFrame && !params.volumetrics.temporalAccumulation) {
-      const decay = Math.max(0, Math.min(0.9999, params.volumetrics.temporalDecay));
-      for (let i = 0; i < volumetricState.volumeData.length; i += 1) {
-        volumetricState.volumeData[i] *= decay;
-      }
-    }
-
     const usedGpuInjection = injectReflectedBeamsGPU({
       params,
       opticsState,
@@ -329,7 +322,9 @@ export async function create3DScene(canvas, params) {
       });
     }
 
+    // Single-pass decay + temporal blend (replaces the old separate decay loop)
     applyTemporalAccumulation(volumetricState.volumeData, volumetricState.historyData, params);
+
     // WebGPU backend requires disposing the GPU texture before re-upload;
     // unlike WebGL, setting needsUpdate alone throws "Texture already initialized".
     volumetricState.volumeTexture.dispose();
