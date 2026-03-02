@@ -35,82 +35,21 @@ function addColor(container, obj, key, label, hint, iconClass) {
   return c;
 }
 
-function createQuickControls(params, hooks, mount) {
-  const state = {};
-  const quick = document.createElement("div");
-  quick.className = "controls-quick";
-  quick.innerHTML = `
-    <button class="quick-btn" data-action="pause">Pause</button>
-    <button class="quick-btn" data-action="reset">Reset</button>
-    <button class="quick-btn" data-action="step">Step</button>
-    <div class="quick-field">
-      <label>View</label>
-      <select data-field="viewMode">
-        <option value="split">Split</option>
-        <option value="view2d">2D</option>
-        <option value="view3d">3D</option>
-      </select>
-    </div>
-    <div class="quick-field">
-      <label>Speed</label>
-      <input data-field="simSpeed" type="range" min="0.25" max="4" step="0.05" />
-      <span data-field="simSpeedLabel">1.00x</span>
-    </div>
-    <label class="quick-toggle">
-      <input data-field="volumetricsEnabled" type="checkbox" />
-      <span>Volumetrics</span>
-    </label>
-    <label class="quick-toggle">
-      <input data-field="showRays" type="checkbox" />
-      <span>Show Rays</span>
-    </label>
-  `;
-  mount.appendChild(quick);
-
-  const pauseBtn = quick.querySelector('[data-action="pause"]');
-  const resetBtn = quick.querySelector('[data-action="reset"]');
-  const stepBtn = quick.querySelector('[data-action="step"]');
-  const viewModeSelect = quick.querySelector('[data-field="viewMode"]');
-  const simSpeedSlider = quick.querySelector('[data-field="simSpeed"]');
-  const simSpeedLabel = quick.querySelector('[data-field="simSpeedLabel"]');
-  const volumetricsToggle = quick.querySelector('[data-field="volumetricsEnabled"]');
-  const showRaysToggle = quick.querySelector('[data-field="showRays"]');
-
-  pauseBtn.addEventListener("click", () => {
-    params.display.paused = !params.display.paused;
-    refresh();
-  });
-  resetBtn.addEventListener("click", () => hooks.reset());
-  stepBtn.addEventListener("click", () => hooks.singleStep());
-  viewModeSelect.addEventListener("change", () => {
-    params.display.viewMode = viewModeSelect.value;
-    hooks.onDisplayChange();
-  });
-  simSpeedSlider.addEventListener("input", () => {
-    params.display.simSpeed = Number(simSpeedSlider.value);
-    refresh();
-  });
-  volumetricsToggle.addEventListener("change", () => {
-    params.volumetrics.enabled = volumetricsToggle.checked;
-    hooks.onVolumetricConfigChange();
-  });
-  showRaysToggle.addEventListener("change", () => {
-    params.volumetrics.showRays = showRaysToggle.checked;
-    hooks.onVolumetricConfigChange();
-  });
-
-  function refresh() {
-    pauseBtn.textContent = params.display.paused ? "Play" : "Pause";
-    viewModeSelect.value = params.display.viewMode;
-    simSpeedSlider.value = `${params.display.simSpeed}`;
-    simSpeedLabel.textContent = `${params.display.simSpeed.toFixed(2)}x`;
-    volumetricsToggle.checked = !!params.volumetrics.enabled;
-    showRaysToggle.checked = !!params.volumetrics.showRays;
+function createTopbarViewModeControl(params, hooks) {
+  const select = document.getElementById("titleViewMode");
+  if (!select) return { refresh() {} };
+  if (!select.dataset.bound) {
+    select.dataset.bound = "1";
+    select.addEventListener("change", () => {
+      params.display.viewMode = select.value;
+      hooks.onDisplayChange();
+    });
   }
-
-  refresh();
-  state.refresh = refresh;
-  return state;
+  return {
+    refresh() {
+      select.value = params.display.viewMode;
+    }
+  };
 }
 
 export function createControls(params, hooks, mounts) {
@@ -122,7 +61,7 @@ export function createControls(params, hooks, mounts) {
   shell.className = "controls-shell";
   mounts.right.appendChild(shell);
 
-  const quick = createQuickControls(params, hooks, shell);
+  const topbarView = createTopbarViewModeControl(params, hooks);
 
   const tabs = document.createElement("div");
   tabs.className = "controls-tabs";
@@ -261,7 +200,6 @@ export function createControls(params, hooks, mounts) {
     add(gui, params.display, "showNodeMarkers", "Show Node Markers", "Show chain node markers in 2D.");
     add(gui, params.display, "renderSubdivision", "Render Subdivision", "Visual sheet subdivision multiplier (render-only).", 1, 4, 1);
     add(gui, params.display, "wireframeView", "Wireframe View", "Render mylar sheet as wireframe for debug.", null, null, null, "fa-border-all").onChange(hooks.onMaterialChange);
-    add(gui, params.display, "viewMode", "View Mode", "Switch between split/2D-only/3D-only.").onChange(hooks.onDisplayChange);
     const resetCamBtn = gui.add(hooks, "resetCamera").name("Reset Camera");
     resetCamBtn.domElement.title = "Reset camera to default view pose.";
     iconizeController(resetCamBtn, "fa-camera-rotate");
@@ -325,7 +263,7 @@ export function createControls(params, hooks, mounts) {
       if (massInfo) {
         massInfo.derivedMass = `${sheetMassFromThickness(params).toFixed(3)} kg`;
       }
-      quick.refresh();
+      topbarView.refresh();
       for (const gui of guis) {
         gui.controllersRecursive().forEach((c) => c.updateDisplay());
       }

@@ -83,6 +83,7 @@ export function createToolbar({
   const uploadPresetsBtn = document.createElement("button");
   const downloadDefaultsBtn = document.createElement("button");
   const uploadDefaultsBtn = document.createElement("button");
+  const clearStorageBtn = document.createElement("button");
   const saveDefaultCamBtn = document.createElement("button");
   const loadDefaultCamBtn = document.createElement("button");
   const resetCamBtn = document.createElement("button");
@@ -98,6 +99,7 @@ export function createToolbar({
   uploadPresetsBtn.textContent = "Upload Presets";
   downloadDefaultsBtn.textContent = "Download App Defaults";
   uploadDefaultsBtn.textContent = "Upload App Defaults";
+  clearStorageBtn.textContent = "Clear Browser Saves";
   saveDefaultCamBtn.textContent = "Save Default Camera";
   loadDefaultCamBtn.textContent = "Load Default Camera";
   resetCamBtn.textContent = "Reset Camera";
@@ -244,6 +246,17 @@ export function createToolbar({
     return true;
   }
 
+  function clearSavedBrowserState() {
+    const confirmed = window.confirm(
+      "Clear saved presets, defaults, camera pose, and last session from this browser?"
+    );
+    if (!confirmed) return;
+    for (const key of Object.values(STORAGE_KEYS)) {
+      localStorage.removeItem(key);
+    }
+    location.reload();
+  }
+
   saveDefaultBtn.addEventListener("click", saveDefault);
   loadDefaultBtn.addEventListener("click", loadDefault);
   savePresetBtn.addEventListener("click", savePreset);
@@ -257,6 +270,7 @@ export function createToolbar({
   uploadDefaultsBtn.addEventListener("click", () => {
     void importDefaultsBundle();
   });
+  clearStorageBtn.addEventListener("click", clearSavedBrowserState);
   saveDefaultCamBtn.addEventListener("click", saveDefaultCamera);
   loadDefaultCamBtn.addEventListener("click", () => {
     loadDefaultCamera();
@@ -279,6 +293,7 @@ export function createToolbar({
     uploadPresetsBtn,
     downloadDefaultsBtn,
     uploadDefaultsBtn,
+    clearStorageBtn,
     spacerB,
     saveDefaultCamBtn,
     loadDefaultCamBtn,

@@ -81,47 +81,47 @@ export const defaultVolumetricParams = {
   debugRenderMode: "scene+volumetrics",
   showRays: false,
 
-  boundsCenterX: 0,
-  boundsCenterY: -3,
-  boundsCenterZ: 0,
-  boundsWidth: 20,
-  boundsHeight: 12,
-  boundsDepth: 20,
+  boundsCenterX: -0.699999999999999,
+  boundsCenterY: -1.4,
+  boundsCenterZ: -5.7,
+  boundsWidth: 10,
+  boundsHeight: 10,
+  boundsDepth: 15,
 
   resolutionPreset: "medium",
-  resolutionX: 120,
-  resolutionY: 68,
-  resolutionZ: 48,
+  resolutionX: 61,
+  resolutionY: 32,
+  resolutionZ: 64,
 
   reducedResolutionMode: "half",
 
   clearEachFrame: true,
-  temporalAccumulation: false,
-  temporalDecay: 0.94,
-  temporalBlend: 0.4,
+  temporalAccumulation: true,
+  temporalDecay: 0.75,
+  temporalBlend: 0.05,
 
-  beamStepSize: 0.35,
-  depositionRadius: 0.24,
-  injectionIntensity: 1,
+  beamStepSize: 0.12,
+  depositionRadius: 0.08,
+  injectionIntensity: 4,
   injectIncidentRays: true,
   maxBeamDistance: 18,
 
-  raymarchStepCount: 72,
-  raymarchMaxDistance: 36,
+  raymarchStepCount: 83,
+  raymarchMaxDistance: 32.6,
 
-  hazeDensity: 1,
-  scatteringCoeff: 1,
-  extinctionCoeff: 0.42,
-  anisotropy: 0.45,
-  forwardScatterBias: 0.6,
-  intensity: 5.8,
-  compositeOpacity: 0.75,
+  hazeDensity: 0.19,
+  scatteringCoeff: 0.63,
+  extinctionCoeff: 0.13,
+  anisotropy: 0.7,
+  forwardScatterBias: 0.7,
+  intensity: 7.5,
+  compositeOpacity: 1.5,
 
   showBounds: false,
   showSlice: false,
   sliceAxis: "xz",
   slicePosition: 0.5,
-  sliceOpacity: 0.85
+  sliceOpacity: 0.52
 };
 
 export function applyResolutionPreset(volumetricParams, presetName) {

@@ -120,8 +120,8 @@ export async function create3DScene(canvas, params) {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 80);
   const defaultCameraPose = {
-    position: { x: -3.7, y: -2.2, z: -4.2 },
-    target: { x: 0, y: -2.8, z: 0 }
+    position: { x: -12.973421089882091, y: -3.8598089797104045, z: -14.437106376675164 },
+    target: { x: -0.5832840573753933, y: -2.7802966359892887, z: -3.549007859284771 }
   };
   camera.position.set(defaultCameraPose.position.x, defaultCameraPose.position.y, defaultCameraPose.position.z);
   const controls = new OrbitControls(camera, canvas);
