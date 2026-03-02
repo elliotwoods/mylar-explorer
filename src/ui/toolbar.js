@@ -1,3 +1,5 @@
+import { createPresetBundle, normalizePresetBundle } from "./presetBundle.js";
+
 const STORAGE_KEYS = {
   defaultConfig: "mylar.sim.defaultConfig.v1",
   presetMap: "mylar.sim.presetMap.v1",
@@ -21,7 +23,45 @@ function savePresetMap(map) {
   localStorage.setItem(STORAGE_KEYS.presetMap, JSON.stringify(map));
 }
 
-export function createToolbar({ mount, getSnapshot, applySnapshot, getCameraPose, setCameraPose, refreshGui }) {
+function triggerJsonDownload(filename, data) {
+  const blob = new Blob([`${JSON.stringify(data, null, 2)}\n`], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function readJsonFromUserFile() {
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "application/json,.json";
+    input.addEventListener("change", () => {
+      const [file] = input.files || [];
+      if (!file) {
+        resolve(null);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => resolve(safeParse(String(reader.result || ""), null));
+      reader.onerror = () => resolve(null);
+      reader.readAsText(file);
+    });
+    input.click();
+  });
+}
+
+export function createToolbar({
+  mount,
+  getSnapshot,
+  applySnapshot,
+  getCameraPose,
+  setCameraPose,
+  refreshGui,
+  appDefaultsBundle = null
+}) {
   const container = mount;
   const presetSelect = document.createElement("select");
   const saveDefaultBtn = document.createElement("button");
@@ -29,18 +69,35 @@ export function createToolbar({ mount, getSnapshot, applySnapshot, getCameraPose
   const savePresetBtn = document.createElement("button");
   const loadPresetBtn = document.createElement("button");
   const deletePresetBtn = document.createElement("button");
+  const downloadPresetsBtn = document.createElement("button");
+  const uploadPresetsBtn = document.createElement("button");
+  const downloadDefaultsBtn = document.createElement("button");
+  const uploadDefaultsBtn = document.createElement("button");
   const saveDefaultCamBtn = document.createElement("button");
   const loadDefaultCamBtn = document.createElement("button");
   const resetCamBtn = document.createElement("button");
+
+  const initialBundle = normalizePresetBundle(appDefaultsBundle);
 
   saveDefaultBtn.textContent = "Save Default";
   loadDefaultBtn.textContent = "Load Default";
   savePresetBtn.textContent = "Save Preset";
   loadPresetBtn.textContent = "Load Preset";
   deletePresetBtn.textContent = "Delete Preset";
+  downloadPresetsBtn.textContent = "Download Presets";
+  uploadPresetsBtn.textContent = "Upload Presets";
+  downloadDefaultsBtn.textContent = "Download App Defaults";
+  uploadDefaultsBtn.textContent = "Upload App Defaults";
   saveDefaultCamBtn.textContent = "Save Default Camera";
   loadDefaultCamBtn.textContent = "Load Default Camera";
   resetCamBtn.textContent = "Reset Camera";
+
+  if (!localStorage.getItem(STORAGE_KEYS.defaultConfig) && initialBundle.defaultSnapshot) {
+    localStorage.setItem(STORAGE_KEYS.defaultConfig, JSON.stringify(initialBundle.defaultSnapshot));
+  }
+  if (!localStorage.getItem(STORAGE_KEYS.presetMap) && Object.keys(initialBundle.presets).length > 0) {
+    savePresetMap(initialBundle.presets);
+  }
 
   function updatePresetOptions() {
     const map = loadPresetMap();
@@ -115,6 +172,34 @@ export function createToolbar({ mount, getSnapshot, applySnapshot, getCameraPose
     updatePresetOptions();
   }
 
+  function exportPresetBundle(filename) {
+    const map = loadPresetMap();
+    const rawDefault = localStorage.getItem(STORAGE_KEYS.defaultConfig);
+    const defaultSnapshot = rawDefault ? safeParse(rawDefault, null) : null;
+    triggerJsonDownload(filename, createPresetBundle(defaultSnapshot, map));
+  }
+
+  async function importPresetsOnly() {
+    const data = await readJsonFromUserFile();
+    if (!data) return;
+    const bundle = normalizePresetBundle(data);
+    savePresetMap(bundle.presets);
+    updatePresetOptions();
+  }
+
+  async function importDefaultsBundle() {
+    const data = await readJsonFromUserFile();
+    if (!data) return;
+    const bundle = normalizePresetBundle(data);
+    if (bundle.defaultSnapshot) {
+      localStorage.setItem(STORAGE_KEYS.defaultConfig, JSON.stringify(bundle.defaultSnapshot));
+      applySnapshot(bundle.defaultSnapshot);
+      refreshGui();
+    }
+    savePresetMap(bundle.presets);
+    updatePresetOptions();
+  }
+
   function saveDefaultCamera() {
     const pose = getCameraPose();
     localStorage.setItem(STORAGE_KEYS.defaultCamera, JSON.stringify(pose));
@@ -139,6 +224,14 @@ export function createToolbar({ mount, getSnapshot, applySnapshot, getCameraPose
   savePresetBtn.addEventListener("click", savePreset);
   loadPresetBtn.addEventListener("click", loadPreset);
   deletePresetBtn.addEventListener("click", deletePreset);
+  downloadPresetsBtn.addEventListener("click", () => exportPresetBundle("mylar-presets.json"));
+  uploadPresetsBtn.addEventListener("click", () => {
+    void importPresetsOnly();
+  });
+  downloadDefaultsBtn.addEventListener("click", () => exportPresetBundle("app-defaults.json"));
+  uploadDefaultsBtn.addEventListener("click", () => {
+    void importDefaultsBundle();
+  });
   saveDefaultCamBtn.addEventListener("click", saveDefaultCamera);
   loadDefaultCamBtn.addEventListener("click", () => {
     loadDefaultCamera();
@@ -157,6 +250,10 @@ export function createToolbar({ mount, getSnapshot, applySnapshot, getCameraPose
     savePresetBtn,
     loadPresetBtn,
     deletePresetBtn,
+    downloadPresetsBtn,
+    uploadPresetsBtn,
+    downloadDefaultsBtn,
+    uploadDefaultsBtn,
     spacerB,
     saveDefaultCamBtn,
     loadDefaultCamBtn,

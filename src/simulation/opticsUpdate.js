@@ -141,6 +141,7 @@ function fastIntersectStrip(origin, dir, halfWidth, profile) {
 
 export function updateOptics(params, opticsState, targetMesh, options = {}) {
   const force = !!options.force;
+  const forceFullTrace = !!options.forceFullTrace;
   if (!params.optics.enabled || !targetMesh) {
     const runtime = opticsState.runtime;
     runtime.totalRays = 0;
@@ -153,6 +154,7 @@ export function updateOptics(params, opticsState, targetMesh, options = {}) {
     runtime.incidentRayCount = 0;
     runtime.reflectedPositions = new Float32Array();
     runtime.reflectedRaySamples = new Float32Array();
+    runtime.reflectedRayIndices = [];
     runtime.reflectedRayCount = 0;
     runtime.missPositions = new Float32Array();
     runtime.hitPointPositions = new Float32Array();
@@ -165,7 +167,8 @@ export function updateOptics(params, opticsState, targetMesh, options = {}) {
     return;
   }
   const forceLiveRayDebug = !!(params.volumetrics?.enabled && params.volumetrics?.showRays);
-  if (!force && params.optics.freeze && opticsState.runtime.totalRays > 0 && !forceLiveRayDebug) return;
+  const rasterizedNeedsLive = !!(params.volumetrics?.enabled && params.volumetrics?.volumetricMode === "rasterized");
+  if (!force && !forceFullTrace && params.optics.freeze && opticsState.runtime.totalRays > 0 && !forceLiveRayDebug && !rasterizedNeedsLive) return;
 
   const source = sourceFromParams(params);
   const rays = opticsState.rays;
@@ -182,13 +185,14 @@ export function updateOptics(params, opticsState, targetMesh, options = {}) {
     runtime.incidentRayCount = 0;
     runtime.reflectedPositions = new Float32Array();
     runtime.reflectedRaySamples = new Float32Array();
+    runtime.reflectedRayIndices = [];
     runtime.reflectedRayCount = 0;
     runtime.missPositions = new Float32Array();
     runtime.hitPointPositions = new Float32Array();
     return;
   }
 
-  const traceStride = Math.max(1, Math.ceil(totalRays / Math.max(1, params.optics.maxTracedRays)));
+  const traceStride = forceFullTrace ? 1 : Math.max(1, Math.ceil(totalRays / Math.max(1, params.optics.maxTracedRays)));
   const estimatedTracedRays = Math.ceil(totalRays / traceStride);
   // Draw decimation should operate on the traced-ray set, not full grid index space.
   const drawStride = Math.max(1, Math.ceil(estimatedTracedRays / Math.max(1, params.optics.maxRenderedRays)));
@@ -197,6 +201,7 @@ export function updateOptics(params, opticsState, targetMesh, options = {}) {
   const incidentLengths = [];
   const refl = [];
   const reflectedSamples = [];
+  const reflectedIndices = [];
   const miss = [];
   const hitPts = [];
   const overlay = {
@@ -255,6 +260,7 @@ export function updateOptics(params, opticsState, targetMesh, options = {}) {
       incidentSamples.push(origin.x, origin.y, origin.z, _incoming.x, _incoming.y, _incoming.z);
       incidentLengths.push(Math.max(0, _point.distanceTo(origin)));
       reflectedSamples.push(_point.x, _point.y, _point.z, _ref.x, _ref.y, _ref.z);
+      reflectedIndices.push(idx);
 
       if (inDrawSet) {
         pushSeg(inc, origin, _point);
@@ -295,6 +301,7 @@ export function updateOptics(params, opticsState, targetMesh, options = {}) {
   runtime.incidentRayCount = incidentLengths.length;
   runtime.reflectedPositions = new Float32Array(refl);
   runtime.reflectedRaySamples = new Float32Array(reflectedSamples);
+  runtime.reflectedRayIndices = reflectedIndices;
   runtime.reflectedRayCount = hitCount;
   runtime.missPositions = new Float32Array(miss);
   runtime.hitPointPositions = new Float32Array(hitPts);

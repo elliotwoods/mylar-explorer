@@ -19,3 +19,5 @@ pnpm-debug.log*
 
 assets/raw-hdri/
 theater_01_8k.exr
+
+.vercel

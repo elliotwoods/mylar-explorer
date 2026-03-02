@@ -18,6 +18,7 @@ import {
 } from "../volumetrics/volumetricState.js";
 import { applyTemporalAccumulation } from "../volumetrics/temporalAccumulation.js";
 import { VolumetricRenderer } from "../volumetrics/volumetricPass.js";
+import { RasterizedVolumetricRenderer } from "../volumetrics/rasterizedVolumetrics.js";
 
 const _source = new THREE.Vector3();
 const _volumeCenter = new THREE.Vector3();
@@ -75,7 +76,8 @@ async function createRendererPipeline(canvas, params, scene, camera, volumetricS
   console.log("[render] WebGPU renderer initialized");
 
   const env = setupEnvironment(renderer, scene, params);
-  const volumetricRenderer = new VolumetricRenderer(camera, params, volumetricState);
+  const raymarchedRenderer = new VolumetricRenderer(camera, params, volumetricState);
+  const rasterizedRenderer = new RasterizedVolumetricRenderer(camera, params);
 
   // Compositing uniforms controlling how scene and volumetric mix
   const uShowScene = uniform(1.0);
@@ -85,7 +87,9 @@ async function createRendererPipeline(canvas, params, scene, camera, volumetricS
   const postProcessing = new THREE.PostProcessing(renderer);
   const scenePass = pass(scene, camera);
   const sceneColor = scenePass.getTextureNode("output");
-  const volumetricTexNode = texture(volumetricRenderer.texture);
+  // Start with the raymarched texture; .value is swapped at render-time
+  // when the active mode changes.
+  const volumetricTexNode = texture(raymarchedRenderer.texture);
 
   const composited = sceneColor.mul(uShowScene).add(
     volumetricTexNode.mul(uCompositeOpacity).mul(uShowVolumetric)
@@ -95,7 +99,9 @@ async function createRendererPipeline(canvas, params, scene, camera, volumetricS
   return {
     renderer,
     env,
-    volumetricRenderer,
+    raymarchedRenderer,
+    rasterizedRenderer,
+    volumetricTexNode,
     postProcessing,
     uShowScene,
     uShowVolumetric,
@@ -103,7 +109,8 @@ async function createRendererPipeline(canvas, params, scene, camera, volumetricS
     hdrActive: hdrDisplay,
     dispose() {
       env.dispose();
-      volumetricRenderer.dispose();
+      raymarchedRenderer.dispose();
+      rasterizedRenderer.dispose();
       renderer.dispose();
     }
   };
@@ -198,7 +205,10 @@ export async function create3DScene(canvas, params) {
     pipe.renderer.setSize(w, h, false);
     camera.aspect = w / Math.max(1, h);
     camera.updateProjectionMatrix();
-    pipe.volumetricRenderer.setSize(w * pipe.renderer.getPixelRatio(), h * pipe.renderer.getPixelRatio());
+    const pw = w * pipe.renderer.getPixelRatio();
+    const ph = h * pipe.renderer.getPixelRatio();
+    pipe.raymarchedRenderer.setSize(pw, ph);
+    pipe.rasterizedRenderer.setSize(pw, ph);
   }
 
   function updateStageSpotFromOptics() {
@@ -273,14 +283,15 @@ export async function create3DScene(canvas, params) {
     _primaryLightDir.subVectors(_volumeCenter, _source);
     if (_primaryLightDir.lengthSq() < 1e-8) _primaryLightDir.set(0, -0.4, 1);
     _primaryLightDir.normalize();
-    pipe.volumetricRenderer.uniforms.primaryLightDir.value.copy(_primaryLightDir);
+    pipe.raymarchedRenderer.uniforms.primaryLightDir.value.copy(_primaryLightDir);
   }
 
   function updateVolumetrics(opticsState, frameDt) {
+    const isRasterized = params.volumetrics.volumetricMode === "rasterized";
     const stats = volumetricState.stats;
     stats.enabled = !!params.volumetrics.enabled;
     stats.averageHitFraction = `${(opticsState?.runtime?.hitFraction ?? 0).toFixed(1)}%`;
-    stats.raymarchSteps = Math.max(1, Math.floor(params.volumetrics.raymarchStepCount));
+    stats.raymarchSteps = isRasterized ? "n/a" : Math.max(1, Math.floor(params.volumetrics.raymarchStepCount));
     stats.frameMs = `${(Math.max(0, frameDt) * 1000).toFixed(1)}`;
     stats.fps = `${(1 / Math.max(1e-4, frameDt)).toFixed(1)}`;
 
@@ -290,7 +301,9 @@ export async function create3DScene(canvas, params) {
     }
 
     getVolumetricBounds(params, volumetricState.boundsMin, volumetricState.boundsMax);
-    stats.volumeResolution = `${volumetricState.resolution.x}x${volumetricState.resolution.y}x${volumetricState.resolution.z}`;
+    stats.volumeResolution = isRasterized
+      ? "rasterized"
+      : `${volumetricState.resolution.x}x${volumetricState.resolution.y}x${volumetricState.resolution.z}`;
 
     volumetricDebug.updateBounds(volumetricState.boundsMin, volumetricState.boundsMax, params.volumetrics.showBounds);
 
@@ -301,17 +314,9 @@ export async function create3DScene(canvas, params) {
       return;
     }
 
-    const usedGpuInjection = injectReflectedBeamsGPU({
-      params,
-      opticsState,
-      volumeData: volumetricState.volumeData,
-      resolution: volumetricState.resolution,
-      boundsMin: volumetricState.boundsMin,
-      boundsMax: volumetricState.boundsMax,
-      stats
-    });
-    if (!usedGpuInjection) {
-      injectReflectedBeamsCPU({
+    // Rasterized mode skips beam injection and 3D texture entirely
+    if (!isRasterized) {
+      const usedGpuInjection = injectReflectedBeamsGPU({
         params,
         opticsState,
         volumeData: volumetricState.volumeData,
@@ -320,23 +325,36 @@ export async function create3DScene(canvas, params) {
         boundsMax: volumetricState.boundsMax,
         stats
       });
+      if (!usedGpuInjection) {
+        injectReflectedBeamsCPU({
+          params,
+          opticsState,
+          volumeData: volumetricState.volumeData,
+          resolution: volumetricState.resolution,
+          boundsMin: volumetricState.boundsMin,
+          boundsMax: volumetricState.boundsMax,
+          stats
+        });
+      }
+
+      applyTemporalAccumulation(volumetricState.volumeData, volumetricState.historyData, params);
+
+      volumetricState.volumeTexture.dispose();
+      volumetricState.volumeTexture.needsUpdate = true;
+      volumetricState.frameIndex += 1;
+
+      updatePrimaryLightDirection();
+    } else {
+      // For rasterized, still report reflected ray count for diagnostics
+      stats.validReflectedRays = opticsState?.runtime?.reflectedRayCount ?? 0;
+      stats.injectedRays = stats.validReflectedRays;
     }
 
-    // Single-pass decay + temporal blend (replaces the old separate decay loop)
-    applyTemporalAccumulation(volumetricState.volumeData, volumetricState.historyData, params);
-
-    // WebGPU backend requires disposing the GPU texture before re-upload;
-    // unlike WebGL, setting needsUpdate alone throws "Texture already initialized".
-    volumetricState.volumeTexture.dispose();
-    volumetricState.volumeTexture.needsUpdate = true;
-    volumetricState.frameIndex += 1;
-
-    updatePrimaryLightDirection();
     volumetricDebug.updateSlice(
       params,
       volumetricState.boundsMin,
       volumetricState.boundsMax,
-      volumetricState.volumeTexture
+      isRasterized ? null : volumetricState.volumeTexture
     );
   }
 
@@ -356,8 +374,15 @@ export async function create3DScene(canvas, params) {
     camera.updateMatrixWorld();
 
     // Render volumetric to its reduced-res target (before PostProcessing)
-    if (pipe.uShowVolumetric.value > 0 && params.volumetrics.enabled && volumetricState.volumeTexture) {
-      pipe.volumetricRenderer.render(pipe.renderer);
+    const isRasterized = params.volumetrics.volumetricMode === "rasterized";
+    if (pipe.uShowVolumetric.value > 0 && params.volumetrics.enabled) {
+      if (isRasterized) {
+        pipe.volumetricTexNode.value = pipe.rasterizedRenderer.texture;
+        pipe.rasterizedRenderer.render(pipe.renderer, opticsState);
+      } else if (volumetricState.volumeTexture) {
+        pipe.volumetricTexNode.value = pipe.raymarchedRenderer.texture;
+        pipe.raymarchedRenderer.render(pipe.renderer);
+      }
     }
 
     pipe.postProcessing.render();

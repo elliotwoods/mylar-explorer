@@ -77,6 +77,7 @@ export const VOLUMETRIC_LOOK_PRESETS = {
 
 export const defaultVolumetricParams = {
   enabled: true,
+  volumetricMode: "raymarched",
   debugRenderMode: "scene+volumetrics",
   showRays: false,
 
@@ -115,6 +116,9 @@ export const defaultVolumetricParams = {
   forwardScatterBias: 0.6,
   intensity: 5.8,
   compositeOpacity: 0.75,
+
+  pipeOversize: 2.5,
+  pipeSoftness: 3.0,
 
   showBounds: false,
   showSlice: false,

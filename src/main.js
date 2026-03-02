@@ -11,6 +11,7 @@ import { createPlots } from "./ui/plots.js";
 import { createSweepPanel } from "./ui/sweepPanel.js";
 import { logOpticsState } from "./render3d/spotlightDebug.js";
 import { createToolbar } from "./ui/toolbar.js";
+import { normalizePresetBundle } from "./ui/presetBundle.js";
 
 const params = cloneParams();
 const model = new SimulationModel(params);
@@ -38,8 +39,20 @@ const plots = createPlots(plotsCanvas, params);
 
 const startupT0 = performance.now();
 
+async function loadAppDefaultsBundle() {
+  try {
+    const response = await fetch("/app-defaults.json", { cache: "no-store" });
+    if (!response.ok) return null;
+    const json = await response.json();
+    return normalizePresetBundle(json);
+  } catch {
+    return null;
+  }
+}
+
 // create3DScene is async (WebGPU init). Wrap all dependent code in an async IIFE.
 (async () => {
+const appDefaultsBundle = await loadAppDefaultsBundle();
 const scene3d = await create3DScene(canvas3d, params);
 rebuildRestBeam(params, opticsState);
 
@@ -49,6 +62,11 @@ const opticsStats = {
   missCount: 0,
   hitFraction: "0.0%"
 };
+
+function opticsOptions(extra = {}) {
+  if (params.volumetrics.volumetricMode === "rasterized") extra.forceFullTrace = true;
+  return extra;
+}
 
 function syncOpticsStats() {
   opticsStats.totalRays = opticsState.runtime.totalRays;
@@ -60,7 +78,7 @@ function syncOpticsStats() {
 function rebuildBeam() {
   rebuildRestBeam(params, opticsState);
   scene3d.syncState(model.state);
-  updateOptics(params, opticsState, scene3d.getSheetMesh(), { force: true });
+  updateOptics(params, opticsState, scene3d.getSheetMesh(), opticsOptions({ force: true }));
   syncOpticsStats();
 }
 
@@ -154,7 +172,7 @@ const hooks = {
   singleStep: () => {
     model.singleStep();
     scene3d.syncState(model.state);
-    updateOptics(params, opticsState, scene3d.getSheetMesh());
+    updateOptics(params, opticsState, scene3d.getSheetMesh(), opticsOptions());
     syncOpticsStats();
   },
   resetCamera: () => scene3d.resetCamera(),
@@ -259,7 +277,8 @@ const toolbar = createToolbar({
   },
   getCameraPose: () => scene3d.getCameraPose(),
   setCameraPose: (pose) => scene3d.setCameraPose(pose),
-  refreshGui: () => controls.refresh()
+  refreshGui: () => controls.refresh(),
+  appDefaultsBundle
 });
 
 btnPause.addEventListener("click", () => {
@@ -333,7 +352,7 @@ function frame(now) {
   lastStepCount = steps;
 
   scene3d.syncState(model.state);
-  updateOptics(params, opticsState, scene3d.getSheetMesh());
+  updateOptics(params, opticsState, scene3d.getSheetMesh(), opticsOptions());
   syncOpticsStats();
 
   renderer2d.draw(model.state, opticsState);

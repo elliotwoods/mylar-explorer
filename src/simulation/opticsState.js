@@ -13,6 +13,7 @@ export function createOpticsState() {
       incidentRayCount: 0,
       reflectedPositions: new Float32Array(),
       reflectedRaySamples: new Float32Array(),
+      reflectedRayIndices: [],
       reflectedRayCount: 0,
       missPositions: new Float32Array(),
       hitPointPositions: new Float32Array(),
