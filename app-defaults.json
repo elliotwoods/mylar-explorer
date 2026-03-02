@@ -40,7 +40,7 @@
       "motionNoisePhase2Deg": 47,
       "motionNoisePhase3Deg": 113,
       "manualOverrideEnabled": true,
-      "manualOverrideDeg": -19.7114045944517,
+      "manualOverrideDeg": -24.226763878424936,
       "manualDecaySeconds": 5,
       "motorTorquePerMotorNm": 8,
       "motorTorqueAvailableNm": 16,
@@ -149,16 +149,16 @@
       "boundsHeight": 10,
       "boundsDepth": 15,
       "resolutionPreset": "medium",
-      "resolutionX": 61,
-      "resolutionY": 32,
+      "resolutionX": 128,
+      "resolutionY": 64,
       "resolutionZ": 64,
       "reducedResolutionMode": "half",
       "clearEachFrame": true,
       "temporalAccumulation": true,
       "temporalDecay": 0.75,
       "temporalBlend": 0.05,
-      "beamStepSize": 0.12,
-      "depositionRadius": 0.08,
+      "beamStepSize": 0.29,
+      "depositionRadius": 0.1,
       "injectionIntensity": 4,
       "injectIncidentRays": true,
       "maxBeamDistance": 18,
@@ -181,9 +181,9 @@
     },
     "cameraPose": {
       "position": {
-        "x": -12.973421089882091,
-        "y": -3.8598089797104045,
-        "z": -14.437106376675164
+        "x": -16.55529439274541,
+        "y": -3.859808979615903,
+        "z": -7.66738992700458
       },
       "target": {
         "x": -0.5832840573753933,
