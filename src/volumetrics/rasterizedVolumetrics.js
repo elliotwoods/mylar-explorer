@@ -71,8 +71,8 @@ export class RasterizedVolumetricRenderer {
       const beamDirN = normalize(beamDir);
 
       // ── Henyey–Greenstein phase function ──
-      // Match raymarched sign convention for anisotropy response.
-      const cosTheta = clamp(dot(beamDirN, viewDir.negate()), float(-1.0), float(1.0));
+      // viewDir is sample->camera, so this matches the raymarched convention.
+      const cosTheta = clamp(dot(beamDirN, viewDir), float(-1.0), float(1.0));
       const g = clamp(u.anisotropy, float(-0.8), float(0.8));
       const gg = g.mul(g);
       const phaseDenom = pow(

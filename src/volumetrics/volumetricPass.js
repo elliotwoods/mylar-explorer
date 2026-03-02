@@ -110,9 +110,9 @@ export class VolumetricRenderer {
 
       // Phase function (Henyey-Greenstein) — computed once outside the loop
       const primaryDir = normalize(u.primaryLightDir);
-      // Sign convention: compare beam travel direction against camera->sample
-      // direction so positive anisotropy brightens when looking down-beam.
-      const cosTheta = clamp(dot(rayDirWorld, primaryDir), float(-1.0), float(1.0));
+      // Compare beam travel direction against sample->camera view direction.
+      // rayDirWorld is camera->sample, so negate it for the phase angle.
+      const cosTheta = clamp(dot(rayDirWorld.negate(), primaryDir), float(-1.0), float(1.0));
       const g = clamp(u.anisotropy, float(-0.8), float(0.8));
       const gg = g.mul(g);
       const phaseDenom = pow(

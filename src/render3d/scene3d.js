@@ -21,7 +21,9 @@ import { RasterizedVolumetricRenderer } from "../volumetrics/rasterizedVolumetri
 const _source = new THREE.Vector3();
 const _volumeCenter = new THREE.Vector3();
 const _primaryLightDir = new THREE.Vector3(0, -0.4, 1).normalize();
+const _beamDirAccum = new THREE.Vector3();
 const _backgroundColor = new THREE.Color();
+const PRIMARY_DIR_SAMPLE_BUDGET = 256;
 
 function getToneMappingConstant(mode) {
   switch (mode) {
@@ -275,12 +277,35 @@ export async function create3DScene(canvas, params) {
     }
   }
 
-  function updatePrimaryLightDirection() {
-    _source.set(params.optics.sourceX, params.optics.sourceY, params.optics.sourceZ);
-    _volumeCenter.copy(volumetricState.boundsMin).add(volumetricState.boundsMax).multiplyScalar(0.5);
-    _primaryLightDir.subVectors(_volumeCenter, _source);
-    if (_primaryLightDir.lengthSq() < 1e-8) _primaryLightDir.set(0, -0.4, 1);
-    _primaryLightDir.normalize();
+  function updatePrimaryLightDirection(opticsState) {
+    const runtime = opticsState?.runtime;
+    const reflectedSamples = runtime?.reflectedRaySamples;
+    const reflectedCount = runtime?.reflectedRayCount || 0;
+
+    _beamDirAccum.set(0, 0, 0);
+    let used = 0;
+    if (reflectedSamples && reflectedCount > 0) {
+      const available = Math.min(reflectedCount, Math.floor(reflectedSamples.length / 6));
+      const stride = Math.max(1, Math.floor(available / PRIMARY_DIR_SAMPLE_BUDGET));
+      for (let i = 0; i < available; i += stride) {
+        const base = i * 6;
+        _beamDirAccum.x += reflectedSamples[base + 3];
+        _beamDirAccum.y += reflectedSamples[base + 4];
+        _beamDirAccum.z += reflectedSamples[base + 5];
+        used += 1;
+      }
+    }
+
+    if (used > 0 && _beamDirAccum.lengthSq() > 1e-8) {
+      _primaryLightDir.copy(_beamDirAccum).normalize();
+    } else {
+      _source.set(params.optics.sourceX, params.optics.sourceY, params.optics.sourceZ);
+      _volumeCenter.copy(volumetricState.boundsMin).add(volumetricState.boundsMax).multiplyScalar(0.5);
+      _primaryLightDir.subVectors(_volumeCenter, _source);
+      if (_primaryLightDir.lengthSq() < 1e-8) _primaryLightDir.set(0, -0.4, 1);
+      _primaryLightDir.normalize();
+    }
+
     pipe.raymarchedRenderer.uniforms.primaryLightDir.value.copy(_primaryLightDir);
   }
 
@@ -346,7 +371,7 @@ export async function create3DScene(canvas, params) {
       }
 
       volumetricState.frameIndex += 1;
-      updatePrimaryLightDirection();
+      updatePrimaryLightDirection(opticsState);
     } else {
       // For rasterized, still report reflected ray count for diagnostics
       stats.injectionBackend = "Rasterized";
