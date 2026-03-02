@@ -4,7 +4,8 @@ const STORAGE_KEYS = {
   defaultConfig: "mylar.sim.defaultConfig.v1",
   presetMap: "mylar.sim.presetMap.v1",
   defaultCamera: "mylar.sim.defaultCamera.v1",
-  lastSession: "mylar.sim.lastSession.v1"
+  lastSession: "mylar.sim.lastSession.v1",
+  appDefaultsFingerprint: "mylar.sim.appDefaultsFingerprint.v1"
 };
 
 function safeParse(json, fallback) {
@@ -21,6 +22,15 @@ function loadPresetMap() {
 
 function savePresetMap(map) {
   localStorage.setItem(STORAGE_KEYS.presetMap, JSON.stringify(map));
+}
+
+function hashString(value) {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16);
 }
 
 function triggerJsonDownload(filename, data) {
@@ -92,12 +102,27 @@ export function createToolbar({
   loadDefaultCamBtn.textContent = "Load Default Camera";
   resetCamBtn.textContent = "Reset Camera";
 
-  if (!localStorage.getItem(STORAGE_KEYS.defaultConfig) && initialBundle.defaultSnapshot) {
+  const bundleJson = JSON.stringify(createPresetBundle(initialBundle.defaultSnapshot, initialBundle.presets));
+  const bundleFingerprint = hashString(bundleJson);
+  const previousFingerprint = localStorage.getItem(STORAGE_KEYS.appDefaultsFingerprint);
+  const bundleChanged = !!previousFingerprint && previousFingerprint !== bundleFingerprint;
+
+  if ((bundleChanged || !localStorage.getItem(STORAGE_KEYS.defaultConfig)) && initialBundle.defaultSnapshot) {
     localStorage.setItem(STORAGE_KEYS.defaultConfig, JSON.stringify(initialBundle.defaultSnapshot));
   }
-  if (!localStorage.getItem(STORAGE_KEYS.presetMap) && Object.keys(initialBundle.presets).length > 0) {
+  if (bundleChanged || !localStorage.getItem(STORAGE_KEYS.presetMap)) {
     savePresetMap(initialBundle.presets);
   }
+  if (bundleChanged) {
+    // New app defaults should take effect immediately instead of stale session state.
+    localStorage.removeItem(STORAGE_KEYS.lastSession);
+    if (initialBundle.defaultSnapshot?.cameraPose) {
+      localStorage.setItem(STORAGE_KEYS.defaultCamera, JSON.stringify(initialBundle.defaultSnapshot.cameraPose));
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.defaultCamera);
+    }
+  }
+  localStorage.setItem(STORAGE_KEYS.appDefaultsFingerprint, bundleFingerprint);
 
   function updatePresetOptions() {
     const map = loadPresetMap();

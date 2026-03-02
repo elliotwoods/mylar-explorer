@@ -12,6 +12,7 @@ import { createSweepPanel } from "./ui/sweepPanel.js";
 import { logOpticsState } from "./render3d/spotlightDebug.js";
 import { createToolbar } from "./ui/toolbar.js";
 import { normalizePresetBundle } from "./ui/presetBundle.js";
+import appDefaultsBundleJson from "../app-defaults.json";
 
 const params = cloneParams();
 const model = new SimulationModel(params);
@@ -39,20 +40,9 @@ const plots = createPlots(plotsCanvas, params);
 
 const startupT0 = performance.now();
 
-async function loadAppDefaultsBundle() {
-  try {
-    const response = await fetch("/app-defaults.json", { cache: "no-store" });
-    if (!response.ok) return null;
-    const json = await response.json();
-    return normalizePresetBundle(json);
-  } catch {
-    return null;
-  }
-}
-
 // create3DScene is async (WebGPU init). Wrap all dependent code in an async IIFE.
 (async () => {
-const appDefaultsBundle = await loadAppDefaultsBundle();
+const appDefaultsBundle = normalizePresetBundle(appDefaultsBundleJson);
 const scene3d = await create3DScene(canvas3d, params);
 rebuildRestBeam(params, opticsState);
 

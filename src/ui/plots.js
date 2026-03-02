@@ -71,9 +71,9 @@ function drawAxes(ctx, rect, xMin, xMax, yMin, yMax, xSuffix = "s", ySuffix = ""
     const xx = x + p * w;
     ctx.beginPath();
     ctx.moveTo(xx, y + h);
-    ctx.lineTo(xx, y + h + 5);
+    ctx.lineTo(xx, y + h + 4);
     ctx.stroke();
-    ctx.fillText(`${formatNumber(t, 1)}${xSuffix}`, xx - 12, y + h + 16);
+    ctx.fillText(`${formatNumber(t, 1)}${xSuffix}`, xx - 12, y + h + 12);
   }
 
   const ySpan = Math.max(1e-6, yMax - yMin);
@@ -94,8 +94,8 @@ function drawSeries(ctx, x, y, w, h, times, values, color, label, unit, showMetr
   if (values.length < 2 || !times.length || times.length !== values.length) return;
   const leftPad = 38;
   const rightPad = 8;
-  const topPad = 6;
-  const bottomPad = 20;
+  const topPad = 4;
+  const bottomPad = 12;
   const plot = {
     x: x + leftPad,
     y: y + topPad,
@@ -126,7 +126,7 @@ function drawSeries(ctx, x, y, w, h, times, values, color, label, unit, showMetr
   const tSpan = Math.max(1e-6, tMax - tMin);
   for (let i = 0; i < values.length; i += 1) {
     const px = plot.x + ((times[i] - tMin) / tSpan) * plot.w;
-    const py = plot.y + plot.h * 0.5 - (values[i] / maxAbs) * plot.h * 0.48;
+    const py = plot.y + plot.h * 0.5 - (values[i] / maxAbs) * plot.h * 0.495;
     if (i === 0) ctx.moveTo(px, py);
     else ctx.lineTo(px, py);
   }
