@@ -8,7 +8,6 @@ import { setupEnvironment } from "./environment.js";
 import { createSpotlightRays } from "./spotlightRays.js";
 import { createVolumetricDebug } from "./volumetricDebug.js";
 import { injectReflectedBeamsGPU, disposeBeamInjectionGPU } from "../volumetrics/beamInjectionGPU.js";
-import { injectReflectedBeamsCPU } from "../volumetrics/beamInjectionCPU.js";
 import { getVolumetricBounds } from "../volumetrics/volumetricBounds.js";
 import {
   createVolumetricState,
@@ -16,7 +15,6 @@ import {
   ensureVolumetricBuffers,
   resetVolumetricHistory
 } from "../volumetrics/volumetricState.js";
-import { applyTemporalAccumulation } from "../volumetrics/temporalAccumulation.js";
 import { VolumetricRenderer } from "../volumetrics/volumetricPass.js";
 import { RasterizedVolumetricRenderer } from "../volumetrics/rasterizedVolumetrics.js";
 
@@ -335,30 +333,10 @@ export async function create3DScene(canvas, params) {
         stats
       });
       if (!usedGpuInjection) {
-        const tCpu0 = performance.now();
-        // CPU path always injects into a per-frame buffer; clear/history behavior
-        // is composed afterwards in applyTemporalAccumulation().
-        volumetricState.volumeData.fill(0);
-        injectReflectedBeamsCPU({
-          params,
-          opticsState,
-          volumeData: volumetricState.volumeData,
-          resolution: volumetricState.resolution,
-          boundsMin: volumetricState.boundsMin,
-          boundsMax: volumetricState.boundsMax,
-          stats
-        });
-        applyTemporalAccumulation(volumetricState.volumeData, volumetricState.historyData, params);
-        volumetricState.volumeTexture.dispose();
-        volumetricState.volumeTexture.needsUpdate = true;
-        const tCpu1 = performance.now();
-        stats.injectionBackend = "CPU";
-        stats.cpuFallbackActive = true;
-        stats.computeClearMs = "0.00";
-        stats.computeInjectMs = `${Math.max(0, tCpu1 - tCpu0).toFixed(2)}`;
-        stats.computeResolveMs = "0.00";
-        stats.computeCopyMs = "0.00";
-        stats.computeTotalMs = stats.computeInjectMs;
+        stats.injectionBackend = "WebGPU (unavailable)";
+        stats.cpuFallbackActive = false;
+        stats.validReflectedRays = opticsState?.runtime?.reflectedRayCount ?? 0;
+        stats.injectedRays = 0;
       }
 
       volumetricState.frameIndex += 1;

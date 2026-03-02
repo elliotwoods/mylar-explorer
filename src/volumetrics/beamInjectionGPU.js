@@ -57,9 +57,8 @@ function chooseDepositionMode(params, boundsMin, boundsMax, resolution) {
   const voxelZ = (boundsMax.z - boundsMin.z) / Math.max(1, resolution.z);
   const minVoxel = Math.max(1e-6, Math.min(voxelX, voxelY, voxelZ));
 
-  // Soft-kernel deposition is still routed to CPU for parity with the existing kernel path.
-  if (radiusMeters > minVoxel * 0.6) return -1;
   if (radiusMeters <= 1e-4) return 0;
+  if (radiusMeters > minVoxel * 0.6) return 2;
   return 1;
 }
 
@@ -100,6 +99,7 @@ class WebGPUBeamInjector {
       stepSize: uniform(0.2),
       maxBeamDistance: uniform(12.0),
       injectionIntensity: uniform(1.0),
+      depositionRadius: uniform(0.08),
       depositionMode: uniform(1, "int"),
       temporalAccum: uniform(1, "int"),
       temporalDecay: uniform(0.9),
@@ -281,6 +281,66 @@ class WebGPUBeamInjector {
       );
 
       const energyPerStep = max(float(0), u.injectionIntensity.div(float(raySteps)));
+      const resXf = float(resX);
+      const resYf = float(resY);
+      const resZf = float(resZ);
+
+      const splatTrilinearIfInside = (gx, gy, gz, energy) => {
+        If(
+          gx.greaterThanEqual(float(-0.5))
+            .and(gx.lessThanEqual(resXf.sub(float(0.5))))
+            .and(gy.greaterThanEqual(float(-0.5)))
+            .and(gy.lessThanEqual(resYf.sub(float(0.5))))
+            .and(gz.greaterThanEqual(float(-0.5)))
+            .and(gz.lessThanEqual(resZf.sub(float(0.5)))),
+          () => {
+            const x0 = int(clamp(floor(gx), float(0), float(resX.sub(int(1)))));
+            const y0 = int(clamp(floor(gy), float(0), float(resY.sub(int(1)))));
+            const z0 = int(clamp(floor(gz), float(0), float(resZ.sub(int(1)))));
+            const x1 = min(resX.sub(int(1)), x0.add(int(1)));
+            const y1 = min(resY.sub(int(1)), y0.add(int(1)));
+            const z1 = min(resZ.sub(int(1)), z0.add(int(1)));
+
+            const fx = clamp(gx.sub(float(x0)), float(0), float(1));
+            const fy = clamp(gy.sub(float(y0)), float(0), float(1));
+            const fz = clamp(gz.sub(float(z0)), float(0), float(1));
+
+            const wx0 = float(1).sub(fx);
+            const wy0 = float(1).sub(fy);
+            const wz0 = float(1).sub(fz);
+            const wx1 = fx;
+            const wy1 = fy;
+            const wz1 = fz;
+
+            const i000 = x0.add(resX.mul(y0.add(resY.mul(z0))));
+            const i100 = x1.add(resX.mul(y0.add(resY.mul(z0))));
+            const i010 = x0.add(resX.mul(y1.add(resY.mul(z0))));
+            const i110 = x1.add(resX.mul(y1.add(resY.mul(z0))));
+            const i001 = x0.add(resX.mul(y0.add(resY.mul(z1))));
+            const i101 = x1.add(resX.mul(y0.add(resY.mul(z1))));
+            const i011 = x0.add(resX.mul(y1.add(resY.mul(z1))));
+            const i111 = x1.add(resX.mul(y1.add(resY.mul(z1))));
+
+            const fixed000 = uint(max(float(0), round(energy.mul(wx0).mul(wy0).mul(wz0).mul(u.atomicScale))));
+            const fixed100 = uint(max(float(0), round(energy.mul(wx1).mul(wy0).mul(wz0).mul(u.atomicScale))));
+            const fixed010 = uint(max(float(0), round(energy.mul(wx0).mul(wy1).mul(wz0).mul(u.atomicScale))));
+            const fixed110 = uint(max(float(0), round(energy.mul(wx1).mul(wy1).mul(wz0).mul(u.atomicScale))));
+            const fixed001 = uint(max(float(0), round(energy.mul(wx0).mul(wy0).mul(wz1).mul(u.atomicScale))));
+            const fixed101 = uint(max(float(0), round(energy.mul(wx1).mul(wy0).mul(wz1).mul(u.atomicScale))));
+            const fixed011 = uint(max(float(0), round(energy.mul(wx0).mul(wy1).mul(wz1).mul(u.atomicScale))));
+            const fixed111 = uint(max(float(0), round(energy.mul(wx1).mul(wy1).mul(wz1).mul(u.atomicScale))));
+
+            If(fixed000.greaterThan(uint(0)), () => { atomicAdd(this.accum.element(i000), fixed000); });
+            If(fixed100.greaterThan(uint(0)), () => { atomicAdd(this.accum.element(i100), fixed100); });
+            If(fixed010.greaterThan(uint(0)), () => { atomicAdd(this.accum.element(i010), fixed010); });
+            If(fixed110.greaterThan(uint(0)), () => { atomicAdd(this.accum.element(i110), fixed110); });
+            If(fixed001.greaterThan(uint(0)), () => { atomicAdd(this.accum.element(i001), fixed001); });
+            If(fixed101.greaterThan(uint(0)), () => { atomicAdd(this.accum.element(i101), fixed101); });
+            If(fixed011.greaterThan(uint(0)), () => { atomicAdd(this.accum.element(i011), fixed011); });
+            If(fixed111.greaterThan(uint(0)), () => { atomicAdd(this.accum.element(i111), fixed111); });
+          }
+        );
+      };
 
       If(u.depositionMode.equal(int(0)), () => {
         const ix = int(clamp(round(gridPos.x), float(0), float(resX.sub(int(1)))));
@@ -292,50 +352,54 @@ class WebGPUBeamInjector {
           atomicAdd(this.accum.element(linear), nearestFixed);
         });
       }).Else(() => {
-        const x0 = int(clamp(floor(gridPos.x), float(0), float(resX.sub(int(1)))));
-        const y0 = int(clamp(floor(gridPos.y), float(0), float(resY.sub(int(1)))));
-        const z0 = int(clamp(floor(gridPos.z), float(0), float(resZ.sub(int(1)))));
-        const x1 = min(resX.sub(int(1)), x0.add(int(1)));
-        const y1 = min(resY.sub(int(1)), y0.add(int(1)));
-        const z1 = min(resZ.sub(int(1)), z0.add(int(1)));
+        If(u.depositionMode.equal(int(2)), () => {
+          // Large-radius GPU kernel: fixed multi-tap splats with bounded cost.
+          const radiusGridX = u.depositionRadius.mul(float(resXm1)).div(boundsSize.x);
+          const radiusGridY = u.depositionRadius.mul(float(resYm1)).div(boundsSize.y);
+          const radiusGridZ = u.depositionRadius.mul(float(resZm1)).div(boundsSize.z);
 
-        const fx = clamp(gridPos.x.sub(float(x0)), float(0), float(1));
-        const fy = clamp(gridPos.y.sub(float(y0)), float(0), float(1));
-        const fz = clamp(gridPos.z.sub(float(z0)), float(0), float(1));
+          const centerEnergy = energyPerStep.mul(float(0.34));
+          const axisEnergy = energyPerStep.mul(float(0.07));
+          const cornerEnergy = energyPerStep.mul(float(0.03));
+          const axisScale = float(0.58);
+          const axisScaleN = axisScale.negate();
+          const cornerScale = float(0.5773502691896258);
+          const cornerScaleN = cornerScale.negate();
 
-        const wx0 = float(1).sub(fx);
-        const wy0 = float(1).sub(fy);
-        const wz0 = float(1).sub(fz);
-        const wx1 = fx;
-        const wy1 = fy;
-        const wz1 = fz;
+          const xPos = gridPos.x.add(radiusGridX.mul(axisScale));
+          const xNeg = gridPos.x.add(radiusGridX.mul(axisScaleN));
+          const yPos = gridPos.y.add(radiusGridY.mul(axisScale));
+          const yNeg = gridPos.y.add(radiusGridY.mul(axisScaleN));
+          const zPos = gridPos.z.add(radiusGridZ.mul(axisScale));
+          const zNeg = gridPos.z.add(radiusGridZ.mul(axisScaleN));
 
-        const i000 = x0.add(resX.mul(y0.add(resY.mul(z0))));
-        const i100 = x1.add(resX.mul(y0.add(resY.mul(z0))));
-        const i010 = x0.add(resX.mul(y1.add(resY.mul(z0))));
-        const i110 = x1.add(resX.mul(y1.add(resY.mul(z0))));
-        const i001 = x0.add(resX.mul(y0.add(resY.mul(z1))));
-        const i101 = x1.add(resX.mul(y0.add(resY.mul(z1))));
-        const i011 = x0.add(resX.mul(y1.add(resY.mul(z1))));
-        const i111 = x1.add(resX.mul(y1.add(resY.mul(z1))));
+          const xCornerPos = gridPos.x.add(radiusGridX.mul(cornerScale));
+          const xCornerNeg = gridPos.x.add(radiusGridX.mul(cornerScaleN));
+          const yCornerPos = gridPos.y.add(radiusGridY.mul(cornerScale));
+          const yCornerNeg = gridPos.y.add(radiusGridY.mul(cornerScaleN));
+          const zCornerPos = gridPos.z.add(radiusGridZ.mul(cornerScale));
+          const zCornerNeg = gridPos.z.add(radiusGridZ.mul(cornerScaleN));
 
-        const fixed000 = uint(max(float(0), round(energyPerStep.mul(wx0).mul(wy0).mul(wz0).mul(u.atomicScale))));
-        const fixed100 = uint(max(float(0), round(energyPerStep.mul(wx1).mul(wy0).mul(wz0).mul(u.atomicScale))));
-        const fixed010 = uint(max(float(0), round(energyPerStep.mul(wx0).mul(wy1).mul(wz0).mul(u.atomicScale))));
-        const fixed110 = uint(max(float(0), round(energyPerStep.mul(wx1).mul(wy1).mul(wz0).mul(u.atomicScale))));
-        const fixed001 = uint(max(float(0), round(energyPerStep.mul(wx0).mul(wy0).mul(wz1).mul(u.atomicScale))));
-        const fixed101 = uint(max(float(0), round(energyPerStep.mul(wx1).mul(wy0).mul(wz1).mul(u.atomicScale))));
-        const fixed011 = uint(max(float(0), round(energyPerStep.mul(wx0).mul(wy1).mul(wz1).mul(u.atomicScale))));
-        const fixed111 = uint(max(float(0), round(energyPerStep.mul(wx1).mul(wy1).mul(wz1).mul(u.atomicScale))));
+          splatTrilinearIfInside(gridPos.x, gridPos.y, gridPos.z, centerEnergy);
 
-        If(fixed000.greaterThan(uint(0)), () => { atomicAdd(this.accum.element(i000), fixed000); });
-        If(fixed100.greaterThan(uint(0)), () => { atomicAdd(this.accum.element(i100), fixed100); });
-        If(fixed010.greaterThan(uint(0)), () => { atomicAdd(this.accum.element(i010), fixed010); });
-        If(fixed110.greaterThan(uint(0)), () => { atomicAdd(this.accum.element(i110), fixed110); });
-        If(fixed001.greaterThan(uint(0)), () => { atomicAdd(this.accum.element(i001), fixed001); });
-        If(fixed101.greaterThan(uint(0)), () => { atomicAdd(this.accum.element(i101), fixed101); });
-        If(fixed011.greaterThan(uint(0)), () => { atomicAdd(this.accum.element(i011), fixed011); });
-        If(fixed111.greaterThan(uint(0)), () => { atomicAdd(this.accum.element(i111), fixed111); });
+          splatTrilinearIfInside(xPos, gridPos.y, gridPos.z, axisEnergy);
+          splatTrilinearIfInside(xNeg, gridPos.y, gridPos.z, axisEnergy);
+          splatTrilinearIfInside(gridPos.x, yPos, gridPos.z, axisEnergy);
+          splatTrilinearIfInside(gridPos.x, yNeg, gridPos.z, axisEnergy);
+          splatTrilinearIfInside(gridPos.x, gridPos.y, zPos, axisEnergy);
+          splatTrilinearIfInside(gridPos.x, gridPos.y, zNeg, axisEnergy);
+
+          splatTrilinearIfInside(xCornerPos, yCornerPos, zCornerPos, cornerEnergy);
+          splatTrilinearIfInside(xCornerNeg, yCornerPos, zCornerPos, cornerEnergy);
+          splatTrilinearIfInside(xCornerPos, yCornerNeg, zCornerPos, cornerEnergy);
+          splatTrilinearIfInside(xCornerPos, yCornerPos, zCornerNeg, cornerEnergy);
+          splatTrilinearIfInside(xCornerNeg, yCornerNeg, zCornerPos, cornerEnergy);
+          splatTrilinearIfInside(xCornerNeg, yCornerPos, zCornerNeg, cornerEnergy);
+          splatTrilinearIfInside(xCornerPos, yCornerNeg, zCornerNeg, cornerEnergy);
+          splatTrilinearIfInside(xCornerNeg, yCornerNeg, zCornerNeg, cornerEnergy);
+        }).Else(() => {
+          splatTrilinearIfInside(gridPos.x, gridPos.y, gridPos.z, energyPerStep);
+        });
       });
     });
 
@@ -473,6 +537,7 @@ class WebGPUBeamInjector {
       u.stepSize.value = stepSize;
       u.maxBeamDistance.value = maxBeamDistance;
       u.injectionIntensity.value = Math.max(0, params.volumetrics.injectionIntensity);
+      u.depositionRadius.value = Math.max(0, params.volumetrics.depositionRadius);
       u.depositionMode.value = depositionMode;
       u.temporalAccum.value = params.volumetrics.temporalAccumulation ? 1 : 0;
       u.temporalDecay.value = Math.max(0, Math.min(0.9999, params.volumetrics.temporalDecay));
@@ -528,7 +593,7 @@ class WebGPUBeamInjector {
         stats.computeCopyMs = "0.00";
         stats.computeTotalMs = "0.00";
       }
-      console.warn("[volumetrics] WebGPU beam injection failed; falling back to CPU.", error);
+      console.warn("[volumetrics] WebGPU beam injection failed; injection unavailable.", error);
       return false;
     }
   }
