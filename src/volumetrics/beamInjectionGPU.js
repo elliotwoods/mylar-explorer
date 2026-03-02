@@ -58,7 +58,8 @@ function chooseDepositionMode(params, boundsMin, boundsMax, resolution) {
   const minVoxel = Math.max(1e-6, Math.min(voxelX, voxelY, voxelZ));
 
   if (radiusMeters <= 1e-4) return 0;
-  if (radiusMeters > minVoxel * 0.6) return 2;
+  // Keep the heavy wide-kernel path for clearly large radii only.
+  if (radiusMeters > minVoxel * 1.0) return 2;
   return 1;
 }
 
@@ -285,6 +286,27 @@ class WebGPUBeamInjector {
       const resYf = float(resY);
       const resZf = float(resZ);
 
+      const splatNearestIfInside = (gx, gy, gz, energy) => {
+        If(
+          gx.greaterThanEqual(float(-0.5))
+            .and(gx.lessThanEqual(resXf.sub(float(0.5))))
+            .and(gy.greaterThanEqual(float(-0.5)))
+            .and(gy.lessThanEqual(resYf.sub(float(0.5))))
+            .and(gz.greaterThanEqual(float(-0.5)))
+            .and(gz.lessThanEqual(resZf.sub(float(0.5)))),
+          () => {
+            const ix = int(clamp(round(gx), float(0), float(resX.sub(int(1)))));
+            const iy = int(clamp(round(gy), float(0), float(resY.sub(int(1)))));
+            const iz = int(clamp(round(gz), float(0), float(resZ.sub(int(1)))));
+            const linear = ix.add(resX.mul(iy.add(resY.mul(iz))));
+            const fixed = uint(max(float(0), round(energy.mul(u.atomicScale))));
+            If(fixed.greaterThan(uint(0)), () => {
+              atomicAdd(this.accum.element(linear), fixed);
+            });
+          }
+        );
+      };
+
       const splatTrilinearIfInside = (gx, gy, gz, energy) => {
         If(
           gx.greaterThanEqual(float(-0.5))
@@ -343,28 +365,18 @@ class WebGPUBeamInjector {
       };
 
       If(u.depositionMode.equal(int(0)), () => {
-        const ix = int(clamp(round(gridPos.x), float(0), float(resX.sub(int(1)))));
-        const iy = int(clamp(round(gridPos.y), float(0), float(resY.sub(int(1)))));
-        const iz = int(clamp(round(gridPos.z), float(0), float(resZ.sub(int(1)))));
-        const linear = ix.add(resX.mul(iy.add(resY.mul(iz))));
-        const nearestFixed = uint(max(float(0), round(energyPerStep.mul(u.atomicScale))));
-        If(nearestFixed.greaterThan(uint(0)), () => {
-          atomicAdd(this.accum.element(linear), nearestFixed);
-        });
+        splatNearestIfInside(gridPos.x, gridPos.y, gridPos.z, energyPerStep);
       }).Else(() => {
         If(u.depositionMode.equal(int(2)), () => {
-          // Large-radius GPU kernel: fixed multi-tap splats with bounded cost.
+          // Lightweight large-radius kernel with bounded tap count.
           const radiusGridX = u.depositionRadius.mul(float(resXm1)).div(boundsSize.x);
           const radiusGridY = u.depositionRadius.mul(float(resYm1)).div(boundsSize.y);
           const radiusGridZ = u.depositionRadius.mul(float(resZm1)).div(boundsSize.z);
 
-          const centerEnergy = energyPerStep.mul(float(0.34));
-          const axisEnergy = energyPerStep.mul(float(0.07));
-          const cornerEnergy = energyPerStep.mul(float(0.03));
-          const axisScale = float(0.58);
+          const centerEnergy = energyPerStep.mul(float(0.55));
+          const axisEnergy = energyPerStep.mul(float(0.075));
+          const axisScale = float(0.85);
           const axisScaleN = axisScale.negate();
-          const cornerScale = float(0.5773502691896258);
-          const cornerScaleN = cornerScale.negate();
 
           const xPos = gridPos.x.add(radiusGridX.mul(axisScale));
           const xNeg = gridPos.x.add(radiusGridX.mul(axisScaleN));
@@ -373,30 +385,13 @@ class WebGPUBeamInjector {
           const zPos = gridPos.z.add(radiusGridZ.mul(axisScale));
           const zNeg = gridPos.z.add(radiusGridZ.mul(axisScaleN));
 
-          const xCornerPos = gridPos.x.add(radiusGridX.mul(cornerScale));
-          const xCornerNeg = gridPos.x.add(radiusGridX.mul(cornerScaleN));
-          const yCornerPos = gridPos.y.add(radiusGridY.mul(cornerScale));
-          const yCornerNeg = gridPos.y.add(radiusGridY.mul(cornerScaleN));
-          const zCornerPos = gridPos.z.add(radiusGridZ.mul(cornerScale));
-          const zCornerNeg = gridPos.z.add(radiusGridZ.mul(cornerScaleN));
-
-          splatTrilinearIfInside(gridPos.x, gridPos.y, gridPos.z, centerEnergy);
-
-          splatTrilinearIfInside(xPos, gridPos.y, gridPos.z, axisEnergy);
-          splatTrilinearIfInside(xNeg, gridPos.y, gridPos.z, axisEnergy);
-          splatTrilinearIfInside(gridPos.x, yPos, gridPos.z, axisEnergy);
-          splatTrilinearIfInside(gridPos.x, yNeg, gridPos.z, axisEnergy);
-          splatTrilinearIfInside(gridPos.x, gridPos.y, zPos, axisEnergy);
-          splatTrilinearIfInside(gridPos.x, gridPos.y, zNeg, axisEnergy);
-
-          splatTrilinearIfInside(xCornerPos, yCornerPos, zCornerPos, cornerEnergy);
-          splatTrilinearIfInside(xCornerNeg, yCornerPos, zCornerPos, cornerEnergy);
-          splatTrilinearIfInside(xCornerPos, yCornerNeg, zCornerPos, cornerEnergy);
-          splatTrilinearIfInside(xCornerPos, yCornerPos, zCornerNeg, cornerEnergy);
-          splatTrilinearIfInside(xCornerNeg, yCornerNeg, zCornerPos, cornerEnergy);
-          splatTrilinearIfInside(xCornerNeg, yCornerPos, zCornerNeg, cornerEnergy);
-          splatTrilinearIfInside(xCornerPos, yCornerNeg, zCornerNeg, cornerEnergy);
-          splatTrilinearIfInside(xCornerNeg, yCornerNeg, zCornerNeg, cornerEnergy);
+          splatNearestIfInside(gridPos.x, gridPos.y, gridPos.z, centerEnergy);
+          splatNearestIfInside(xPos, gridPos.y, gridPos.z, axisEnergy);
+          splatNearestIfInside(xNeg, gridPos.y, gridPos.z, axisEnergy);
+          splatNearestIfInside(gridPos.x, yPos, gridPos.z, axisEnergy);
+          splatNearestIfInside(gridPos.x, yNeg, gridPos.z, axisEnergy);
+          splatNearestIfInside(gridPos.x, gridPos.y, zPos, axisEnergy);
+          splatNearestIfInside(gridPos.x, gridPos.y, zNeg, axisEnergy);
         }).Else(() => {
           splatTrilinearIfInside(gridPos.x, gridPos.y, gridPos.z, energyPerStep);
         });
