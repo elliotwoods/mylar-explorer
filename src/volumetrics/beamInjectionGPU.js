@@ -86,6 +86,7 @@ class WebGPUBeamInjector {
     this.scratchRaysA = new Float32Array(4);
     this.scratchRaysB = new Float32Array(4);
     this.clearHistoryRequested = true;
+    this.copyRegion = new THREE.Box3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(1, 1, 1));
 
     this.uniforms = {
       rayCount: uniform(0, "int"),
@@ -501,7 +502,8 @@ class WebGPUBeamInjector {
       t2 = performance.now();
       this.renderer.compute(this.computeResolve, this.voxelCount);
       t3 = performance.now();
-      this.renderer.copyTextureToTexture(this.volumeStorageTexture, volumetricState.volumeTexture);
+      this.copyRegion.max.set(resolution.x, resolution.y, resolution.z);
+      this.renderer.copyTextureToTexture(this.volumeStorageTexture, volumetricState.volumeTexture, this.copyRegion);
       t4 = performance.now();
 
       if (stats) {
